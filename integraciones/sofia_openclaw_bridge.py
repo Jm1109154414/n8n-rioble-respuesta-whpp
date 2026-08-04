@@ -59,7 +59,7 @@ def phones_match(left: Any, right: Any) -> bool:
 
 
 def response_template(reason: str, status: str = "error") -> dict[str, Any]:
-    should_send = status != "error"
+    should_send = status not in {"error", "ignored"}
     return {
         "ok": status != "error",
         "decision": {
