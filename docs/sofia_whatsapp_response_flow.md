@@ -121,3 +121,25 @@ workflows/generated/Rioble_WhatsApp_Respuestas_MVP_Inmobiliaria.json
 ```
 
 Debe importarse en n8n como workflow inactivo. El path del webhook se cambia a `rioble-whatsapp-webhook-mvp` para evitar choque con el flujo vivo.
+
+## Modo Prueba Con Allowlist
+
+El workflow generado incluye el nodo:
+
+```text
+Only Test Phone?
+```
+
+Ese nodo deja pasar a Sofía solo cuando el teléfono entrante coincide con:
+
+```text
+RIOBLE_TEST_ALLOWLIST_PHONE
+```
+
+Para la prueba inicial:
+
+```text
+RIOBLE_TEST_ALLOWLIST_PHONE=+5218445283282
+```
+
+Si llega una respuesta de otro número, el flujo puede guardar la conversación y marcar `respondio`, pero no llama a Sofía ni manda respuesta automática.

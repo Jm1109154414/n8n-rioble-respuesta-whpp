@@ -83,6 +83,15 @@ function ifNode(name, id, position, expression) {
   };
 }
 
+function allowlistIfNode(name, id, position) {
+  return ifNode(
+    name,
+    id,
+    position,
+    "={{(() => { const allowed = String($env.RIOBLE_TEST_ALLOWLIST_PHONE || '').replace(/\\D/g, ''); const incoming = String($('Normalizar mensajes').first().json.telefono || '').replace(/\\D/g, ''); if (!allowed) return false; const variants = new Set([allowed]); if (allowed.length === 10) variants.add('52' + allowed); if (allowed.startsWith('521') && allowed.length === 13) variants.add('52' + allowed.slice(3)); if (allowed.startsWith('52') && allowed.length === 12) variants.add('521' + allowed.slice(2)); return variants.has(incoming); })()}}"
+  );
+}
+
 function httpNode(name, id, position, parameters) {
   return {
     parameters,
@@ -790,8 +799,9 @@ from inserted;`;
 
 const newNodes = [
   postgresNode('Leer contexto inmobiliario', 'leer_contexto_inmobiliario', [1780, 180], readContextQuery, "={{ [ $json.id || '', $('Normalizar mensajes').first().json.telefono || '', $('Normalizar mensajes').first().json.message_id || '' ] }}"),
-  codeNode('Build Conversation Context', 'build_conversation_context_inmobiliario', [2000, 180], buildContextCode),
-  httpNode('Call Agent Decision', 'call_agent_decision_inmobiliario', [2220, 180], {
+  allowlistIfNode('Only Test Phone?', 'only_test_phone_inmobiliario', [2000, 180]),
+  codeNode('Build Conversation Context', 'build_conversation_context_inmobiliario', [2220, 180], buildContextCode),
+  httpNode('Call Agent Decision', 'call_agent_decision_inmobiliario', [2440, 180], {
     method: 'POST',
     url: "={{(($env.AGENT_DECISION_URL || '').replace(/\\/decide(?:-instagram|-whatsapp)?$/, '/decide-whatsapp')) || 'http://host.docker.internal:8787/decide-whatsapp'}}",
     sendHeaders: true,
@@ -807,15 +817,15 @@ const newNodes = [
     jsonBody: '={{$json.agentPayload}}',
     options: { response: { response: { neverError: true, responseFormat: 'json' } } },
   }),
-  codeNode('Resolve Final Decision', 'resolve_final_decision_inmobiliario', [2440, 180], resolveDecisionCode),
-  codeNode('Apply Business Rules', 'apply_business_rules_inmobiliario', [2660, 180], applyRulesCode),
-  postgresNode('Actualizar perfil envio', 'actualizar_perfil_envio', [2880, 180], updateProfileQuery, "={{ [ $json.envioId || '', $json.currentStage || '', $json.commercialStatus || '', $json.awaitingField || '', $json.nextStep || '', JSON.stringify($json.profile || {}), $json.profile?.qualificationLevel || '', String($json.profile?.qualificationScore || 0), $json.profile?.assignedSeller || '', String(Boolean($json.noEnviar)) ] }}"),
-  ifNode('Should Notify Seller?', 'should_notify_seller_inmobiliario', [3100, 80], '={{Boolean($json.shouldNotifySeller)}}'),
-  codeNode('Send WhatsApp to Seller', 'send_whatsapp_to_seller_inmobiliario', [3320, -20], sendSellerCode),
-  postgresNode('Record Handoff Event', 'record_handoff_event_inmobiliario', [3540, -20], recordHandoffQuery, "={{ [ $json.sellerHandoffPayload?.envioId || '', $json.sellerHandoffPayload?.conversationKey || '', $json.sellerHandoffPayload?.sellerName || '', $json.sellerHandoffPayload?.sellerPhone || '', $json.sellerNotifyStatus || '', $json.sellerNotifyProviderMessageId || '', JSON.stringify($json.sellerHandoffPayload?.handoffPayload || {}), $json.sellerNotifyError || '', String($execution.id) ] }}"),
-  ifNode('Should Send Reply?', 'should_send_reply_inmobiliario', [3760, 180], '={{Boolean($json.shouldSendReply && (!($json.shouldNotifySeller) || $json.sellerNotifyStatus === "sent"))}}'),
-  codeNode('Send WhatsApp Reply', 'send_whatsapp_reply_inmobiliario', [3980, 80], sendReplyCode),
-  postgresNode('Insertar respuesta outbound', 'insertar_respuesta_outbound_inmobiliario', [4200, 80], insertReplyQuery, "={{ [ $json.envioId || '', $json.replySentAt || '', $json.phone || '', $json.reply_text || '', $json.replyProviderMessageId || '', $json.phoneNumberId || '', '', JSON.stringify({ source: 'agent_reply', response: $json.replyApiResponse || {}, status: $json.replySendStatus || '', error: $json.replyError || '' }) ] }}"),
+  codeNode('Resolve Final Decision', 'resolve_final_decision_inmobiliario', [2660, 180], resolveDecisionCode),
+  codeNode('Apply Business Rules', 'apply_business_rules_inmobiliario', [2880, 180], applyRulesCode),
+  postgresNode('Actualizar perfil envio', 'actualizar_perfil_envio', [3100, 180], updateProfileQuery, "={{ [ $json.envioId || '', $json.currentStage || '', $json.commercialStatus || '', $json.awaitingField || '', $json.nextStep || '', JSON.stringify($json.profile || {}), $json.profile?.qualificationLevel || '', String($json.profile?.qualificationScore || 0), $json.profile?.assignedSeller || '', String(Boolean($json.noEnviar)) ] }}"),
+  ifNode('Should Notify Seller?', 'should_notify_seller_inmobiliario', [3320, 80], '={{Boolean($json.shouldNotifySeller)}}'),
+  codeNode('Send WhatsApp to Seller', 'send_whatsapp_to_seller_inmobiliario', [3540, -20], sendSellerCode),
+  postgresNode('Record Handoff Event', 'record_handoff_event_inmobiliario', [3760, -20], recordHandoffQuery, "={{ [ $json.sellerHandoffPayload?.envioId || '', $json.sellerHandoffPayload?.conversationKey || '', $json.sellerHandoffPayload?.sellerName || '', $json.sellerHandoffPayload?.sellerPhone || '', $json.sellerNotifyStatus || '', $json.sellerNotifyProviderMessageId || '', JSON.stringify($json.sellerHandoffPayload?.handoffPayload || {}), $json.sellerNotifyError || '', String($execution.id) ] }}"),
+  ifNode('Should Send Reply?', 'should_send_reply_inmobiliario', [3980, 180], '={{Boolean($json.shouldSendReply && (!($json.shouldNotifySeller) || $json.sellerNotifyStatus === "sent"))}}'),
+  codeNode('Send WhatsApp Reply', 'send_whatsapp_reply_inmobiliario', [4200, 80], sendReplyCode),
+  postgresNode('Insertar respuesta outbound', 'insertar_respuesta_outbound_inmobiliario', [4420, 80], insertReplyQuery, "={{ [ $json.envioId || '', $json.replySentAt || '', $json.phone || '', $json.reply_text || '', $json.replyProviderMessageId || '', $json.phoneNumberId || '', '', JSON.stringify({ source: 'agent_reply', response: $json.replyApiResponse || {}, status: $json.replySendStatus || '', error: $json.replyError || '' }) ] }}"),
 ];
 
 workflow.nodes.push(...newNodes);
@@ -824,7 +834,10 @@ workflow.connections['Marcar envio respondio'] = {
   main: [[{ node: 'Leer contexto inmobiliario', type: 'main', index: 0 }]],
 };
 workflow.connections['Leer contexto inmobiliario'] = {
-  main: [[{ node: 'Build Conversation Context', type: 'main', index: 0 }]],
+  main: [[{ node: 'Only Test Phone?', type: 'main', index: 0 }]],
+};
+workflow.connections['Only Test Phone?'] = {
+  main: [[{ node: 'Build Conversation Context', type: 'main', index: 0 }], []],
 };
 workflow.connections['Build Conversation Context'] = {
   main: [[{ node: 'Call Agent Decision', type: 'main', index: 0 }]],

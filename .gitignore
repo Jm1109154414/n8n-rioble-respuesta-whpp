@@ -19,3 +19,4 @@ __pycache__/
 
 # Raw n8n exports from live workflows
 workflows/live/
+workflows/temp/
