@@ -1,0 +1,729 @@
+{
+  "id": "rioble-whatsapp-respuestas-mvp-inmobiliaria",
+  "name": "Rioble WhatsApp - Respuestas MVP Inmobiliaria",
+  "description": "Copia inactiva del webhook de respuestas con calificación inmobiliaria y handoff a vendedor.",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "rioble-whatsapp-webhook-mvp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "18e98dd0-2bfa-403c-9de6-9262f10a9e63",
+      "name": "Meta Webhook Verify",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        784,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $json.query || {};\nconst expectedToken = $env.META_WEBHOOK_VERIFY_TOKEN || 'rioble-whatsapp-verify';\n\nconst mode = query['hub.mode'];\nconst token = query['hub.verify_token'];\nconst challenge = query['hub.challenge'];\n\nif (mode === 'subscribe' && token === expectedToken && challenge) {\n  return [{ json: { challenge } }];\n}\n\nreturn [{ json: { error: 'Webhook verification failed' } }];"
+      },
+      "id": "d4f0ff94-dded-467c-9cc0-5fe4c7583442",
+      "name": "Validar verificacion",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{$json.challenge || $json.error}}",
+        "options": {
+          "responseCode": "={{$json.challenge ? 200 : 403}}"
+        }
+      },
+      "id": "35cc96ca-83fa-4aaa-b458-9661c4d6f4c7",
+      "name": "Responder verificacion",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1232,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rioble-whatsapp-webhook-mvp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "8b0af0fe-1e05-4761-ab57-b4cb8c34e39f",
+      "name": "Meta Webhook Mensajes",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        784,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\":true}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "85101eff-1686-4dd3-a3b0-cb57dff672e0",
+      "name": "Responder mensajes",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1008,
+        592
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nconst rows = [];\n\nfunction phoneVariants(value) {\n  const raw = String(value || '').replace(/\\D/g, '');\n  const variants = new Set();\n  if (!raw) return [];\n  variants.add(raw);\n  if (raw.length === 10) variants.add(`52${raw}`);\n  if (raw.startsWith('521') && raw.length === 13) variants.add(`52${raw.slice(3)}`);\n  if (raw.startsWith('52') && raw.length === 12) variants.add(`521${raw.slice(2)}`);\n  return [...variants];\n}\n\nfor (const entry of body.entry || []) {\n  for (const change of entry.changes || []) {\n    const value = change.value || {};\n    const metadata = value.metadata || {};\n    const contactByWaId = new Map((value.contacts || []).map((contact) => [contact.wa_id, contact]));\n\n    for (const message of value.messages || []) {\n      const contact = contactByWaId.get(message.from) || {};\n      let messageText = '';\n      if (message.type === 'text') messageText = message.text?.body || '';\n      if (message.type === 'button') messageText = message.button?.text || message.button?.payload || '';\n      if (message.type === 'interactive') {\n        messageText = message.interactive?.button_reply?.title || message.interactive?.list_reply?.title || JSON.stringify(message.interactive || {});\n      }\n      if (!messageText && message.type) messageText = `[${message.type}]`;\n\n      rows.push({\n        json: {\n          id: '',\n          timestamp: new Date(Number(message.timestamp || Math.floor(Date.now() / 1000)) * 1000).toISOString(),\n          direccion: 'entrante',\n          telefono: String(message.from || '').replace(/\\D/g, ''),\n          telefono_variants: phoneVariants(message.from),\n          wa_id: contact.wa_id || message.from || '',\n          nombre_perfil: contact.profile?.name || '',\n          mensaje: messageText,\n          tipo: message.type || '',\n          message_id: message.id || '',\n          phone_number_id: metadata.phone_number_id || '',\n          display_phone_number: metadata.display_phone_number || '',\n          payload: JSON.stringify({ entry, change, message, contact }),\n        },\n      });\n    }\n  }\n}\n\nreturn rows;"
+      },
+      "id": "9dd70629-8fc0-4cac-97c8-c4738a78a31f",
+      "name": "Normalizar mensajes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH incoming AS (\n SELECT regexp_replace('{{ $json.telefono }}', '\\D', '', 'g') AS phone_digits\n),\nvariants AS (\n SELECT phone_digits FROM incoming WHERE phone_digits != ''\n UNION\n SELECT '52' || phone_digits FROM incoming WHERE length(phone_digits) = 10\n UNION\n SELECT '52' || substring(phone_digits from 4) FROM incoming WHERE phone_digits LIKE '521%' AND length(phone_digits) = 13\n UNION\n SELECT '521' || substring(phone_digits from 3) FROM incoming WHERE phone_digits LIKE '52%' AND length(phone_digits) = 12\n),\nmatched AS (\n SELECT e.id, e.nombre\n FROM envios e\n JOIN variants v ON e.telefono_digits = v.phone_digits\n ORDER BY e.ultimo_envio DESC NULLS LAST, e.id DESC\n LIMIT 1\n)\nINSERT INTO conversaciones (\n id,\n timestamp,\n direccion,\n telefono,\n wa_id,\n nombre_perfil,\n mensaje,\n tipo,\n message_id,\n phone_number_id,\n display_phone_number,\n payload\n)\nVALUES (\n (SELECT id FROM matched),\n NULLIF('{{ $json.timestamp || \"\" }}', '')::timestamptz,\n '{{ $json.direccion }}',\n '{{ $json.telefono }}',\n '{{ $json.wa_id }}',\n COALESCE(NULLIF($${{ $json.nombre_perfil || \"\" }}$$, ''), (SELECT nombre FROM matched), ''),\n $${{ $json.mensaje || \"\" }}$$,\n NULLIF('{{ $json.tipo || \"\" }}', ''),\n NULLIF('{{ $json.message_id || \"\" }}', ''),\n NULLIF('{{ $json.phone_number_id || \"\" }}', ''),\n NULLIF('{{ $json.display_phone_number || \"\" }}', ''),\n NULLIF($${{ $json.payload || \"\" }}$$, '')::jsonb\n)\nON CONFLICT (message_id) WHERE message_id IS NOT NULL\nDO NOTHING\nRETURNING\n conversation_pk,\n id,\n timestamp,\n direccion,\n telefono,\n wa_id,\n nombre_perfil,\n mensaje,\n tipo,\n message_id;",
+        "options": {
+          "queryBatching": "independently"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1232,
+        208
+      ],
+      "id": "5f31d7d7-0482-4922-a455-a69a9d350829",
+      "name": "Insertar conversacion",
+      "credentials": {
+        "postgres": {
+          "id": "i3na2jv0MfpG9bjf",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nconst rows = [];\n\nfunction formatStatusError(error) {\n  if (!error) return '';\n  const parts = [];\n  if (error.code !== undefined && error.code !== null && error.code !== '') parts.push(`code=${error.code}`);\n  if (error.title) parts.push(`title=${error.title}`);\n  if (error.message && error.message !== error.title) parts.push(`message=${error.message}`);\n  const details = error.error_data?.details || error.error_data?.messaging_product || '';\n  if (details) parts.push(`details=${details}`);\n  return parts.join(' | ') || JSON.stringify(error);\n}\n\nfor (const entry of body.entry || []) {\n  for (const change of entry.changes || []) {\n    const value = change.value || {};\n    const metadata = value.metadata || {};\n    const contactByWaId = new Map((value.contacts || []).map((contact) => [String(contact.wa_id || ''), contact]));\n\n    for (const status of value.statuses || []) {\n      const messageId = String(status.id || '').trim();\n      if (!messageId) continue;\n\n      const recipient = String(status.recipient_id || '').replace(/\\D/g, '');\n      const contact = contactByWaId.get(String(status.recipient_id || '')) || {};\n      const recipientUserId = String(status.recipient_user_id || contact.user_id || '').trim();\n      const errors = Array.isArray(status.errors) ? status.errors : [];\n      const errorStatus = errors.map(formatStatusError).filter(Boolean).join(' || ').slice(0, 1000);\n\n      rows.push({\n        json: {\n          message_id: messageId,\n          estado: String(status.status || '').trim(),\n          ultimo_evento: new Date(Number(status.timestamp || Math.floor(Date.now() / 1000)) * 1000).toISOString(),\n          telefono: recipient,\n          wa_id: recipient,\n          recipient_user_id: recipientUserId,\n          conversation_id: status.conversation?.id || '',\n          conversation_origin: status.conversation?.origin?.type || '',\n          pricing_model: status.pricing?.pricing_model || '',\n          billable: status.pricing?.billable ?? '',\n          category: status.pricing?.category || '',\n          error_status: errorStatus,\n          phone_number_id: metadata.phone_number_id || '',\n          display_phone_number: metadata.display_phone_number || '',\n          payload_status: JSON.stringify({ entry, change, status, contact }),\n        },\n      });\n    }\n  }\n}\n\nreturn rows;"
+      },
+      "id": "3937988e-5ba5-4952-92b0-6a7a76fae3d0",
+      "name": "Normalizar estados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH matched AS (\n  SELECT id\n  FROM envios\n  WHERE message_id = '{{ $json.message_id }}'\n  LIMIT 1\n)\nINSERT INTO whatsapp_status_events (\n  message_id,\n  estado,\n  timestamp,\n  telefono,\n  wa_id,\n  error_status,\n  phone_number_id,\n  display_phone_number,\n  payload,\n  matched_envio_id\n)\nVALUES (\n  '{{ $json.message_id }}',\n  '{{ $json.estado }}',\n  NULLIF('{{ $json.ultimo_evento || \"\" }}', '')::timestamptz,\n  '{{ $json.telefono }}',\n  '{{ $json.wa_id }}',\n  NULLIF($${{ $json.error_status || \"\" }}$$, ''),\n  NULLIF('{{ $json.phone_number_id || \"\" }}', ''),\n  NULLIF('{{ $json.display_phone_number || \"\" }}', ''),\n  NULLIF($${{ $json.payload_status || \"\" }}$$, '')::jsonb,\n  (SELECT id FROM matched)\n)\nON CONFLICT (message_id, estado, timestamp) WHERE message_id IS NOT NULL\nDO NOTHING\nRETURNING\n  status_event_pk,\n  message_id,\n  estado,\n  timestamp AS ultimo_evento,\n  error_status,\n  telefono,\n  wa_id,\n  phone_number_id,\n  display_phone_number,\n  matched_envio_id;",
+        "options": {
+          "queryBatching": "independently"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1232,
+        400
+      ],
+      "id": "fe548a56-ef46-43f5-a0b6-fe19eae3d984",
+      "name": "Insertar status event",
+      "credentials": {
+        "postgres": {
+          "id": "i3na2jv0MfpG9bjf",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH incoming AS (\n SELECT\n '{{ $json.message_id }}'::text AS message_id,\n '{{ $json.estado }}'::text AS nuevo_estado,\n NULLIF('{{ $json.ultimo_evento || \"\" }}', '')::timestamptz AS nuevo_ultimo_evento,\n NULLIF($${{ $json.error_status || \"\" }}$$, '') AS nuevo_error_status\n)\nUPDATE envios e\nSET\n estado = CASE\n  WHEN lower(e.estado) = 'respondio' THEN e.estado\n  WHEN lower(i.nuevo_estado) = 'failed' THEN 'failed'\n  WHEN lower(i.nuevo_estado) = 'read' THEN 'read'\n  WHEN lower(i.nuevo_estado) = 'delivered' AND lower(e.estado) NOT IN ('read', 'respondio') THEN 'delivered'\n  WHEN lower(i.nuevo_estado) = 'sent' AND lower(e.estado) IN ('pendiente', 'enviado', 'sent') THEN 'sent'\n  ELSE e.estado\nEND,\n ultimo_evento = GREATEST(COALESCE(e.ultimo_evento, 'epoch'::timestamptz), i.nuevo_ultimo_evento),\n error_status = CASE\n WHEN lower(i.nuevo_estado) = 'failed' THEN i.nuevo_error_status\n ELSE e.error_status\n END\nFROM incoming i\nWHERE e.message_id = i.message_id\nRETURNING\n e.id,\n e.nombre,\n e.telefono,\n e.estado,\n e.ultimo_evento,\n e.error_status,\n e.error,\n e.message_id;",
+        "options": {
+          "queryBatching": "independently"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1456,
+        400
+      ],
+      "id": "5032043a-d248-4538-b8c0-9beef8f75bfc",
+      "name": "Actualizar estado envio",
+      "credentials": {
+        "postgres": {
+          "id": "i3na2jv0MfpG9bjf",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE envios\nSET\n estado = 'respondio',\n ultimo_evento = GREATEST(\n COALESCE(ultimo_evento, 'epoch'::timestamptz),\n COALESCE(NULLIF('{{ $json.timestamp || \"\" }}', '')::timestamptz, now())\n )\nWHERE id = NULLIF('{{ $json.id || \"\" }}', '')::integer\nRETURNING\n id,\n nombre,\n telefono,\n estado,\n ultimo_evento,\n message_id,\n error,\n error_status;",
+        "options": {
+          "queryBatching": "independently"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1456,
+        208
+      ],
+      "id": "1844a58b-91fc-481e-8562-c80f84ad7294",
+      "name": "Marcar envio respondio",
+      "credentials": {
+        "postgres": {
+          "id": "i3na2jv0MfpG9bjf",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with inbound as (\n  select\n    nullif($1::text, '')::integer as envio_id,\n    regexp_replace(coalesce($2::text, ''), '\\D', '', 'g') as phone_digits,\n    nullif($3::text, '') as inbound_message_id\n), variants as (\n  select phone_digits from inbound where phone_digits <> ''\n  union\n  select '52' || phone_digits from inbound where length(phone_digits) = 10\n  union\n  select '52' || substring(phone_digits from 4) from inbound where phone_digits like '521%' and length(phone_digits) = 13\n  union\n  select '521' || substring(phone_digits from 3) from inbound where phone_digits like '52%' and length(phone_digits) = 12\n), lead_match as (\n  select e.*\n  from public.envios e\n  where e.id = (select envio_id from inbound)\n     or e.telefono_digits in (select phone_digits from variants)\n  order by case when e.id = (select envio_id from inbound) then 0 else 1 end,\n           e.ultimo_envio desc nulls last,\n           e.id desc\n  limit 1\n), recent as (\n  select c.*\n  from public.conversaciones c\n  where c.id = (select id from lead_match)\n     or c.telefono_digits in (select phone_digits from variants)\n  order by c.timestamp desc, c.created_at desc\n  limit 12\n), handoff as (\n  select sh.*\n  from public.seller_handoffs sh\n  where sh.envio_id = (select id from lead_match)\n     or sh.conversation_key = 'envios:' || (select id from lead_match)::text\n  order by sh.created_at desc\n  limit 1\n)\nselect\n  lm.id,\n  lm.nombre,\n  lm.telefono,\n  lm.telefono_digits,\n  lm.estado,\n  lm.no_enviar,\n  lm.ultimo_envio,\n  lm.ultimo_evento,\n  lm.message_id as outbound_message_id,\n  lm.etapa_conversacion,\n  lm.estatus_comercial,\n  lm.perfil_inmobiliario::text as perfil_inmobiliario,\n  lm.qualification_level,\n  lm.qualification_score,\n  lm.assigned_seller,\n  lm.handoff_status,\n  lm.handoff_at,\n  coalesce(\n    (select jsonb_agg(to_jsonb(r) order by r.timestamp, r.created_at) from recent r),\n    '[]'::jsonb\n  )::text as recent_messages,\n  coalesce((select status from handoff), '') as seller_handoff_status,\n  coalesce((select provider_message_id from handoff), '') as seller_handoff_message_id\nfrom lead_match lm;",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ [ $json.id || '', $('Normalizar mensajes').first().json.telefono || '', $('Normalizar mensajes').first().json.message_id || '' ] }}",
+          "replaceEmptyStrings": false
+        }
+      },
+      "id": "leer_contexto_inmobiliario",
+      "name": "Leer contexto inmobiliario",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1780,
+        180
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "i3na2jv0MfpG9bjf",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const input = $json || {};\nlet normalized = {};\ntry { normalized = $('Normalizar mensajes').first().json || {}; } catch {}\nlet inserted = {};\ntry { inserted = $('Insertar conversacion').first().json || {}; } catch {}\n\nfunction firstNonEmpty(...values) {\n  for (const value of values) {\n    if (value === undefined || value === null) continue;\n    const clean = String(value).trim();\n    if (clean) return clean;\n  }\n  return '';\n}\nfunction parseJson(value, fallback) {\n  if (!value) return fallback;\n  if (typeof value === 'object') return value;\n  try { return JSON.parse(value); } catch { return fallback; }\n}\nfunction asArray(value) {\n  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);\n  if (typeof value === 'string' && value.trim()) return value.split(',').map((item) => item.trim()).filter(Boolean);\n  return [];\n}\nfunction has(text, regex) {\n  return regex.test(String(text || '').toLowerCase());\n}\n\nconst profile = parseJson(input.perfil_inmobiliario, {});\nconst recentMessages = parseJson(input.recent_messages, []);\nconst currentText = String(normalized.mensaje || inserted.mensaje || '').trim();\nconst lower = currentText.toLowerCase();\n\nconst optOutSignal = has(lower, /\\b(no me escribas|no contactar|baja|cancelar mensajes|dejen de escribir|no quiero recibir|no molestar|stop|unsubscribe)\\b/i);\nconst notInterestedSignal = has(lower, /\\b(no me interesa|ya no busco|ya compr[eé]|por ahora no|no gracias|no quiero invertir)\\b/i);\nconst handoffSignal = has(lower, /\\b(quiero verla|quiero verlo|me llamas|ll[aá]mame|tienes opciones|m[aá]ndame opciones|quiero vender|necesito valuaci[oó]n|aval[uú]o|que me contacte|hablar con asesor|visita|cita|llamada)\\b/i);\n\nlet interestTypeSignal = '';\nif (!optOutSignal && !notInterestedSignal) {\n  if (has(lower, /\\b(vender|vendo|venta de mi|poner en venta|valuaci[oó]n|aval[uú]o|cu[aá]nto vale)\\b/i)) interestTypeSignal = 'sell';\n  else if (has(lower, /\\b(rentar|renta|arrendar|alquilar|mudanza|mensual)\\b/i)) interestTypeSignal = 'rent';\n  else if (has(lower, /\\b(invertir|inversi[oó]n|plusval[ií]a|rentabilidad|patrimonio)\\b/i)) interestTypeSignal = 'invest';\n  else if (has(lower, /\\b(comprar|busco|quiero una|quiero un|departamento|depa|casa|terreno|bodega|oficina|local)\\b/i)) interestTypeSignal = 'buy';\n}\n\nlet propertyTypeSignal = '';\nfor (const [label, regex] of [\n  ['departamento', /\\b(depa|departamento|apartamento)\\b/i],\n  ['casa', /\\b(casa|residencia)\\b/i],\n  ['terreno', /\\b(terreno|lote)\\b/i],\n  ['local', /\\b(local|comercial)\\b/i],\n  ['oficina', /\\b(oficina|corporativ)\\b/i],\n  ['bodega', /\\b(bodega|nave industrial)\\b/i],\n]) {\n  if (regex.test(lower)) {\n    propertyTypeSignal = label;\n    break;\n  }\n}\n\nconst zones = [];\nfor (const zone of ['Zapopan', 'Guadalajara', 'Providencia', 'Andares', 'Puerta de Hierro', 'Chapalita', 'Tlaquepaque', 'Tonalá', 'Tlajomulco', 'Puerto Vallarta', 'Jalisco', 'Casa Fuerte']) {\n  if (new RegExp(zone, 'i').test(currentText)) zones.push(zone);\n}\n\nconst amountMatch = currentText.match(/(?:\\$\\s*)?(\\d+(?:[.,]\\d+)?)\\s*(mdp|millones?|millon|mil|k)?/i);\nconst amountText = amountMatch && /(presupuesto|hasta|m[aá]ximo|aprox|alrededor|millones?|mdp|\\$|renta|mensual|precio|pido|vale)/i.test(currentText)\n  ? amountMatch[0].trim()\n  : '';\nconst rentBudget = /(renta|mensual|mudanza)/i.test(currentText) ? amountText : '';\nconst purchaseBudget = rentBudget ? '' : amountText;\n\nlet timelineSignal = '';\nif (has(lower, /\\b(ya|inmediato|este mes|cuanto antes|urgente)\\b/i)) timelineSignal = 'inmediato';\nelse if (has(lower, /\\b(1\\s*-\\s*3|uno a tres|tres meses|pr[oó]ximos meses)\\b/i)) timelineSignal = '1-3_meses';\nelse if (has(lower, /\\b(3\\s*-\\s*6|seis meses|mediano plazo)\\b/i)) timelineSignal = '3-6_meses';\nelse if (has(lower, /\\b(explorando|viendo|sondeando|sin prisa|m[aá]s adelante)\\b/i)) timelineSignal = 'explorando';\n\nlet paymentMethodSignal = '';\nif (has(lower, /\\b(contado|cash)\\b/i)) paymentMethodSignal = 'contado';\nelse if (has(lower, /\\b(cr[eé]dito|hipotecario|infonavit|banco|preaprobado|pre aprobado)\\b/i)) paymentMethodSignal = 'credito';\nelse if (has(lower, /\\b(mixto)\\b/i)) paymentMethodSignal = 'mixto';\n\nconst currentProfile = {\n  fullName: firstNonEmpty(profile.fullName, input.nombre, normalized.nombre_perfil),\n  phone: firstNonEmpty(profile.phone, input.telefono_digits, normalized.telefono),\n  interestType: firstNonEmpty(interestTypeSignal, profile.interestType, 'unknown'),\n  propertyType: firstNonEmpty(propertyTypeSignal, profile.propertyType),\n  zones: Array.from(new Set([...asArray(profile.zones), ...zones])),\n  budgetMin: firstNonEmpty(profile.budgetMin),\n  budgetMax: firstNonEmpty(purchaseBudget, profile.budgetMax),\n  rentBudget: firstNonEmpty(rentBudget, profile.rentBudget),\n  currency: firstNonEmpty(profile.currency, 'MXN'),\n  timeline: firstNonEmpty(timelineSignal, profile.timeline),\n  paymentMethod: firstNonEmpty(paymentMethodSignal, profile.paymentMethod),\n  financingStatus: firstNonEmpty(profile.financingStatus, /preaprobado|pre aprobado/i.test(currentText) ? 'preaprobado' : ''),\n  bedrooms: firstNonEmpty(profile.bedrooms, (currentText.match(/\\b(\\d+)\\s*(?:rec[aá]maras?|habitaciones?)\\b/i) || [])[1]),\n  mustHaves: asArray(profile.mustHaves),\n  sellerPropertyAddress: firstNonEmpty(profile.sellerPropertyAddress),\n  sellerAskingPrice: firstNonEmpty(profile.sellerAskingPrice),\n  sellerPropertyCondition: firstNonEmpty(profile.sellerPropertyCondition),\n  sellerPropertySize: firstNonEmpty(profile.sellerPropertySize),\n  urgency: firstNonEmpty(profile.urgency, timelineSignal === 'inmediato' ? 'alta' : ''),\n  summary: firstNonEmpty(profile.summary),\n  nextBestAction: firstNonEmpty(profile.nextBestAction),\n  assignedSeller: firstNonEmpty(profile.assignedSeller, input.assigned_seller, $env.DEFAULT_SELLER_NAME, 'Dueño Rioble'),\n  assignedSellerPhone: firstNonEmpty(profile.assignedSellerPhone, $env.SELLER_NOTIFY_PHONE, $env.DEFAULT_SELLER_PHONE, '+5213316994400'),\n};\nif (currentProfile.interestType === 'sell' && amountText) currentProfile.sellerAskingPrice = firstNonEmpty(amountText, profile.sellerAskingPrice);\n\nconst buyerComplete = ['buy', 'invest'].includes(currentProfile.interestType) && currentProfile.zones.length && currentProfile.propertyType && currentProfile.budgetMax;\nconst renterComplete = currentProfile.interestType === 'rent' && currentProfile.zones.length && currentProfile.propertyType && currentProfile.rentBudget;\nconst sellerComplete = currentProfile.interestType === 'sell' && (currentProfile.sellerPropertyAddress || currentProfile.zones.length) && currentProfile.propertyType && (currentProfile.sellerAskingPrice || /valuaci[oó]n|aval[uú]o/i.test(lower));\nconst fastTimeline = ['inmediato', '1-3_meses'].includes(currentProfile.timeline);\nconst strongPayment = ['contado', 'credito'].includes(currentProfile.paymentMethod) || currentProfile.financingStatus === 'preaprobado';\nconst handoffReady = Boolean(!optOutSignal && !notInterestedSignal && (buyerComplete || sellerComplete || renterComplete || handoffSignal || fastTimeline || strongPayment));\n\nlet qualification = { level: input.qualification_level || 'nurture', score: Number(input.qualification_score || 0), reasons: [] };\nif (optOutSignal) qualification = { level: 'do_not_contact', score: 0, reasons: ['pidió no contacto'] };\nelse if (handoffReady) qualification = { level: 'hot', score: Math.max(80, qualification.score), reasons: ['criterio de prospecto importante'] };\nelse if (currentProfile.interestType !== 'unknown') qualification = { level: 'warm', score: Math.max(40, qualification.score), reasons: ['interés real con datos pendientes'] };\n\nfunction deriveStage() {\n  if (String(input.etapa_conversacion || '') === 'handoff_sent' || String(input.estatus_comercial || '') === 'seguimiento_humano') {\n    return { currentStage: 'handoff_sent', status: 'asignado_a_vendedor', nextStep: 'Evitar recalificar; seguimiento humano', awaitingField: 'none' };\n  }\n  if (optOutSignal || input.no_enviar === true) return { currentStage: 'do_not_contact', status: 'no_contactar', nextStep: 'No insistir', awaitingField: 'none' };\n  if (notInterestedSignal) return { currentStage: 'not_interested', status: 'no_interesado', nextStep: 'Cerrar suave sin insistir', awaitingField: 'none' };\n  if (handoffReady) return { currentStage: 'ready_for_handoff', status: 'prospecto_caliente', nextStep: 'Notificar vendedor con resumen', awaitingField: 'none' };\n  if (!currentProfile.interestType || currentProfile.interestType === 'unknown') return { currentStage: input.etapa_conversacion || 'new_reply', status: 'nuevo', nextStep: 'Detectar interés real', awaitingField: 'interestType' };\n  if (currentProfile.interestType === 'buy') return { currentStage: 'qualify_buyer', status: 'perfil_incompleto', nextStep: 'Pedir dato clave de compra', awaitingField: !currentProfile.zones.length ? 'zones' : !currentProfile.propertyType ? 'propertyType' : !currentProfile.budgetMax ? 'budgetMax' : 'timeline' };\n  if (currentProfile.interestType === 'sell') return { currentStage: 'qualify_seller', status: 'perfil_incompleto', nextStep: 'Pedir dato clave de venta', awaitingField: !(currentProfile.sellerPropertyAddress || currentProfile.zones.length) ? 'sellerPropertyAddress' : !currentProfile.propertyType ? 'propertyType' : !currentProfile.sellerAskingPrice ? 'sellerAskingPrice' : 'timeline' };\n  if (currentProfile.interestType === 'rent') return { currentStage: 'qualify_renter', status: 'perfil_incompleto', nextStep: 'Pedir dato clave de renta', awaitingField: !currentProfile.zones.length ? 'zones' : !currentProfile.propertyType ? 'propertyType' : !currentProfile.rentBudget ? 'rentBudget' : 'moveInDate' };\n  if (currentProfile.interestType === 'invest') return { currentStage: 'qualify_investor', status: 'perfil_incompleto', nextStep: 'Pedir objetivo de inversión o presupuesto', awaitingField: !currentProfile.zones.length ? 'zones' : !currentProfile.budgetMax ? 'budgetMax' : 'timeline' };\n  return { currentStage: 'nurture', status: 'nutricion', nextStep: 'Guardar contexto sin presión', awaitingField: 'none' };\n}\n\nconst stage = deriveStage();\nconst missingFields = [];\nif (stage.awaitingField && stage.awaitingField !== 'none') missingFields.push(stage.awaitingField);\n\nreturn {\n  json: {\n    envio: input,\n    inbound: normalized,\n    recent_messages: recentMessages,\n    currentProfile,\n    qualification,\n    derivedStage: stage,\n    missingFields,\n    handoffReady,\n    sellerHandoffStatus: input.seller_handoff_status || '',\n    agentPayload: {\n      source_system: 'real-estate-whatsapp-agent-runtime',\n      workflow: 'Rioble WhatsApp - Respuestas MVP Inmobiliaria',\n      channel: 'whatsapp',\n      conversation_key: 'envios:' + String(input.id || ''),\n      message_id: normalized.message_id || '',\n      external_lead_id: input.id ? 'envios:' + String(input.id) : '',\n      sender_id: normalized.telefono || input.telefono_digits || '',\n      sender_username: normalized.nombre_perfil || input.nombre || '',\n      message_text: currentText,\n      timestamp: normalized.timestamp || new Date().toISOString(),\n      lead: { ...currentProfile, qualification, handoffReady },\n      missing_fields: missingFields,\n      recent_messages: recentMessages,\n      context: {\n        company_name: $env.REAL_ESTATE_COMPANY_NAME || 'Rioble Inmobiliaria',\n        advisor_name: 'Sofía Tapia',\n        service_area: 'Jalisco, principalmente Guadalajara metropolitana y Puerto Vallarta',\n        default_seller_name: $env.DEFAULT_SELLER_NAME || 'Dueño Rioble',\n        seller_notify_phone: $env.SELLER_NOTIFY_PHONE || $env.DEFAULT_SELLER_PHONE || '+5213316994400',\n        current_stage: stage.currentStage,\n        next_step: stage.nextStep,\n        source_account: 'WhatsApp Inmobiliaria',\n        phone_number_id: normalized.phone_number_id || '',\n        message_signals: { optOutSignal, notInterestedSignal, handoffSignal, interestTypeSignal, propertyTypeSignal, zones, budget: purchaseBudget, rentBudget, timelineSignal, paymentMethodSignal }\n      },\n      today: new Date().toISOString().slice(0, 10)\n    }\n  }\n};"
+      },
+      "id": "build_conversation_context_inmobiliario",
+      "name": "Build Conversation Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{(($env.AGENT_DECISION_URL || '').replace(/\\/decide(?:-instagram|-whatsapp)?$/, '/decide-whatsapp')) || 'http://host.docker.internal:8787/decide-whatsapp'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "= {{$env.AGENT_DECISION_TOKEN ? `Bearer ${$env.AGENT_DECISION_TOKEN}` : ''}}"
+            },
+            {
+              "name": "X-RealEstate-Bridge-Source",
+              "value": "real-estate-whatsapp-agent-runtime"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.agentPayload}}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "call_agent_decision_inmobiliario",
+      "name": "Call Agent Decision",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2220,
+        180
+      ],
+      "alwaysOutputData": true,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const http = $json || {};\nconst base = $('Build Conversation Context').first().json;\nconst stage = base.derivedStage?.currentStage || 'new_reply';\n\nfunction fallbackReply(currentStage, profile = {}) {\n  if (currentStage === 'do_not_contact') return 'Claro, entiendo. Ya no te escribo por este medio.';\n  if (currentStage === 'not_interested') return 'Claro, entiendo perfecto.\\n\\nDe cualquier forma, aprovecho para comentarte que en Rioble Inmobiliaria también podemos ayudarte si en algún momento quieres vender alguna propiedad.\\n\\nTenemos clientes buscando oportunidades en diferentes zonas y podríamos ayudarte a revisar si tu propiedad encaja con alguno de ellos.\\n\\n¿Actualmente tienes alguna propiedad que estés considerando vender?';\n  if (currentStage === 'new_reply' || currentStage === 'detect_interest') return 'Claro. Para ubicarte bien, ¿estás buscando comprar, vender, rentar o invertir?';\n  if (currentStage === 'qualify_buyer') {\n    if (!profile.zones?.length) return 'Va. ¿En qué zona de Jalisco te gustaría buscar?';\n    if (!profile.propertyType) return 'Perfecto. ¿Qué tipo de propiedad tienes en mente?';\n    if (!profile.budgetMax) return 'Bien. ¿Qué presupuesto aproximado traes contemplado?';\n    return 'Va. ¿En qué plazo te gustaría comprar?';\n  }\n  if (currentStage === 'qualify_seller') {\n    if (!(profile.sellerPropertyAddress || profile.zones?.length)) return 'Entiendo. ¿En qué zona está la propiedad que quieres vender?';\n    if (!profile.propertyType) return 'Va. ¿Qué tipo de propiedad es?';\n    if (!profile.sellerAskingPrice) return 'Perfecto. ¿Ya tienes un precio esperado o buscas que la valuemos?';\n    return '¿En qué plazo te gustaría venderla?';\n  }\n  if (currentStage === 'qualify_renter') return 'Perfecto. ¿En qué zona te gustaría rentar?';\n  if (currentStage === 'qualify_investor') return 'Bien. ¿Buscas invertir para renta, plusvalía o patrimonio familiar?';\n  if (currentStage === 'ready_for_handoff') {\n    if (profile.interestType === 'sell') return 'Perfecto, ya tengo los datos base. Te conecto con un compañero especialista para revisar tu propiedad y el siguiente paso.';\n    if (profile.interestType === 'buy' || profile.interestType === 'invest') return 'Perfecto, con eso ya puedo ubicar mejor opciones. Te conecto con un compañero especialista para que te comparta propiedades que encajen contigo.';\n    return 'Perfecto, ya tengo lo importante. Te conecto con un compañero especialista para que te comparta el siguiente paso.';\n  }\n  return 'Va, lo dejamos sin presión. ¿Qué sería lo más importante para ti en este momento?';\n}\nfunction sensitive(value) {\n  return /(token|tokens|contrase(?:ñ|n)a|password|api[_\\s-]?key|credenciales?|secret|secreto|prompt|instrucciones internas?|accesos?)/i.test(String(value || ''));\n}\n\nconst fallback = {\n  reply_text: fallbackReply(stage, base.currentProfile),\n  intent: stage,\n  lead_status: base.derivedStage?.status || 'en_conversacion',\n  currentStage: stage,\n  nextStep: base.derivedStage?.nextStep || 'Continuar conversación',\n  awaitingField: base.derivedStage?.awaitingField || '',\n  should_send_reply: true,\n  should_escalate: stage === 'ready_for_handoff',\n  handoff_ready: stage === 'ready_for_handoff',\n  handoff_reason: '',\n  assigned_seller: $env.DEFAULT_SELLER_NAME || 'Dueño Rioble',\n  qualification: base.qualification || { level: 'nurture', score: 0, reasons: [] },\n  collected: {},\n  internal_note: 'fallback_agent_decision'\n};\n\nconst rawPayload = http.reply_text || http.intent || http.currentStage || http.decision || http.reply\n  ? http\n  : (http.body && (http.body.reply_text || http.body.intent || http.body.currentStage || http.body.decision || http.body.reply) ? http.body : null);\nfunction flattenDecision(payload) {\n  if (!payload) return null;\n  if (payload.reply_text || payload.intent || payload.currentStage) return payload;\n  const decision = payload.decision && typeof payload.decision === 'object' ? payload.decision : {};\n  const reply = payload.reply && typeof payload.reply === 'object' ? payload.reply : {};\n  const handoff = payload.handoff && typeof payload.handoff === 'object' ? payload.handoff : {};\n  const internal = payload.internal_report && typeof payload.internal_report === 'object' ? payload.internal_report : {};\n  return {\n    reply_text: reply.text || '',\n    intent: decision.intent || decision.action || '',\n    lead_status: decision.lead_status || internal.status || '',\n    currentStage: decision.currentStage || decision.current_stage || '',\n    nextStep: decision.nextStep || decision.next_step || internal.next_step || '',\n    awaitingField: decision.awaitingField || decision.awaiting_field || '',\n    should_send_reply: reply.should_send !== false,\n    should_escalate: Boolean(handoff.required),\n    handoff_ready: Boolean(handoff.ready),\n    handoff_reason: handoff.reason || '',\n    assigned_seller: handoff.assigned_seller || '',\n    qualification: payload.qualification,\n    collected: payload.captured_data || {},\n    internal_note: internal.summary || ''\n  };\n}\nconst payload = flattenDecision(rawPayload);\nconst chosen = payload || fallback;\nconst rawCollected = (chosen.collected && typeof chosen.collected === 'object') ? chosen.collected : {};\nconst qualification = chosen.qualification && typeof chosen.qualification === 'object'\n  ? chosen.qualification\n  : fallback.qualification;\n\nconst normalized = {\n  reply_text: String(chosen.reply_text || fallback.reply_text || '').trim() || fallback.reply_text,\n  intent: String(chosen.intent || fallback.intent || 'info').trim() || 'info',\n  lead_status: String(chosen.lead_status || chosen.status || fallback.lead_status || 'en_conversacion').trim() || 'en_conversacion',\n  currentStage: String(chosen.currentStage || chosen.current_stage || fallback.currentStage || '').trim() || fallback.currentStage,\n  nextStep: String(chosen.nextStep || chosen.next_step || fallback.nextStep || '').trim() || fallback.nextStep,\n  awaitingField: String(chosen.awaitingField || chosen.awaiting_field || fallback.awaitingField || '').trim(),\n  should_send_reply: chosen.should_send_reply !== false,\n  should_escalate: Boolean(chosen.should_escalate || chosen.handoff_ready),\n  handoff_ready: Boolean(chosen.handoff_ready || rawCollected.handoffReady),\n  handoff_reason: String(chosen.handoff_reason || '').trim(),\n  assigned_seller: String(chosen.assigned_seller || rawCollected.assignedSeller || fallback.assigned_seller || '').trim(),\n  do_not_contact: Boolean(chosen.do_not_contact || rawCollected.doNotContact || qualification.level === 'do_not_contact' || chosen.currentStage === 'do_not_contact'),\n  qualification: {\n    level: String(qualification.level || 'nurture'),\n    score: Number(qualification.score || 0),\n    reasons: Array.isArray(qualification.reasons) ? qualification.reasons.map(String) : []\n  },\n  collected: rawCollected,\n  internal_note: String(chosen.internal_note || '').trim()\n};\nif (normalized.handoff_ready) normalized.should_escalate = true;\nif (sensitive(base.inbound?.mensaje || '')) {\n  normalized.should_escalate = false;\n  normalized.handoff_ready = false;\n  normalized.reply_text = 'Permíteme confirmarlo y te digo bien para no darte un dato a medias.';\n  normalized.internal_note = [normalized.internal_note, 'security_block_without_handoff'].filter(Boolean).join(' | ');\n}\n\nreturn { json: { ...base, agentDecision: normalized, rawAgentDecision: rawPayload || chosen, agentDecisionStatus: payload ? 'agent_ok' : 'agent_fallback' } };"
+      },
+      "id": "resolve_final_decision_inmobiliario",
+      "name": "Resolve Final Decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2440,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const input = $json;\nconst decision = input.agentDecision || {};\nconst envio = input.envio || {};\nconst inbound = input.inbound || {};\nconst baseProfile = input.currentProfile || {};\nconst collected = decision.collected && typeof decision.collected === 'object' ? decision.collected : {};\n\nfunction firstNonEmpty(...values) {\n  for (const value of values) {\n    if (value === undefined || value === null) continue;\n    const clean = String(value).trim();\n    if (clean) return clean;\n  }\n  return '';\n}\nfunction asArray(value) {\n  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);\n  if (typeof value === 'string' && value.trim()) return value.split(',').map((item) => item.trim()).filter(Boolean);\n  return [];\n}\nfunction missing(value) {\n  const clean = String(value || '').trim();\n  return clean || 'no confirmado';\n}\n\nconst qualification = decision.qualification || input.qualification || { level: 'nurture', score: 0, reasons: [] };\nconst profile = {\n  ...baseProfile,\n  fullName: firstNonEmpty(collected.fullName, baseProfile.fullName, envio.nombre, inbound.nombre_perfil),\n  phone: firstNonEmpty(collected.phone, baseProfile.phone, inbound.telefono, envio.telefono_digits),\n  interestType: firstNonEmpty(collected.interestType, baseProfile.interestType, 'unknown'),\n  propertyType: firstNonEmpty(collected.propertyType, baseProfile.propertyType),\n  zones: Array.from(new Set([...asArray(baseProfile.zones), ...asArray(collected.zones)])),\n  budgetMin: firstNonEmpty(collected.budgetMin, baseProfile.budgetMin),\n  budgetMax: firstNonEmpty(collected.budgetMax, baseProfile.budgetMax),\n  rentBudget: firstNonEmpty(collected.rentBudget, baseProfile.rentBudget),\n  timeline: firstNonEmpty(collected.timeline, baseProfile.timeline),\n  paymentMethod: firstNonEmpty(collected.paymentMethod, baseProfile.paymentMethod),\n  financingStatus: firstNonEmpty(collected.financingStatus, baseProfile.financingStatus),\n  bedrooms: firstNonEmpty(collected.bedrooms, baseProfile.bedrooms),\n  sellerPropertyAddress: firstNonEmpty(collected.sellerPropertyAddress, baseProfile.sellerPropertyAddress),\n  sellerAskingPrice: firstNonEmpty(collected.sellerAskingPrice, baseProfile.sellerAskingPrice),\n  summary: firstNonEmpty(collected.summary, baseProfile.summary),\n  nextBestAction: firstNonEmpty(collected.nextBestAction, baseProfile.nextBestAction, decision.nextStep),\n  assignedSeller: firstNonEmpty(decision.assigned_seller, collected.assignedSeller, baseProfile.assignedSeller, $env.DEFAULT_SELLER_NAME, 'Dueño Rioble'),\n  assignedSellerPhone: firstNonEmpty(collected.assignedSellerPhone, baseProfile.assignedSellerPhone, $env.SELLER_NOTIFY_PHONE, $env.DEFAULT_SELLER_PHONE, '+5213316994400'),\n  qualificationLevel: firstNonEmpty(qualification.level, baseProfile.qualificationLevel, 'nurture'),\n  qualificationScore: Number(qualification.score || baseProfile.qualificationScore || 0),\n  qualificationReasons: Array.isArray(qualification.reasons) ? qualification.reasons : [],\n};\n\nconst doNotContact = Boolean(decision.do_not_contact || profile.qualificationLevel === 'do_not_contact' || decision.currentStage === 'do_not_contact');\nconst alreadyHandoff = String(envio.etapa_conversacion || '') === 'handoff_sent' || ['sent', 'delivered', 'read'].includes(String(envio.handoff_status || input.sellerHandoffStatus || '').toLowerCase());\n\nlet currentStage = decision.currentStage || input.derivedStage?.currentStage || 'new_reply';\nlet commercialStatus = decision.lead_status || input.derivedStage?.status || 'en_conversacion';\nlet awaitingField = decision.awaitingField || input.derivedStage?.awaitingField || '';\nlet nextStep = decision.nextStep || input.derivedStage?.nextStep || 'Continuar conversación';\n\nif (alreadyHandoff) {\n  currentStage = 'handoff_sent';\n  commercialStatus = 'asignado_a_vendedor';\n  awaitingField = 'none';\n  nextStep = 'Seguimiento humano por vendedor';\n} else if (doNotContact) {\n  currentStage = 'do_not_contact';\n  commercialStatus = 'no_contactar';\n  awaitingField = 'none';\n  nextStep = 'No insistir';\n} else if (decision.currentStage === 'not_interested' || profile.interestType === 'not_interested') {\n  currentStage = 'not_interested';\n  commercialStatus = 'no_interesado';\n  awaitingField = 'none';\n  nextStep = 'Cerrar suave sin insistir';\n} else if (decision.should_escalate || decision.handoff_ready || currentStage === 'ready_for_handoff') {\n  currentStage = 'ready_for_handoff';\n  commercialStatus = 'prospecto_caliente';\n  awaitingField = 'none';\n  nextStep = 'Notificar vendedor con resumen';\n}\n\nconst defaultHandoffReply = profile.interestType === 'sell'\n  ? 'Perfecto, ya tengo los datos base. Te conecto con un compañero especialista para revisar tu propiedad y el siguiente paso.'\n  : profile.interestType === 'buy' || profile.interestType === 'invest'\n    ? 'Perfecto, con eso ya puedo ubicar mejor opciones. Te conecto con un compañero especialista para que te comparta propiedades que encajen contigo.'\n    : 'Perfecto, ya tengo lo importante. Te conecto con un compañero especialista para que te comparta el siguiente paso.';\nconst replyText = String(decision.reply_text || '').trim() || (currentStage === 'ready_for_handoff' ? defaultHandoffReply : '');\nconst budget = profile.interestType === 'rent' ? profile.rentBudget : (profile.budgetMax || profile.sellerAskingPrice);\nconst profileSummary = profile.summary || [\n  'Interés: ' + missing(profile.interestType),\n  'Tipo: ' + missing(profile.propertyType),\n  'Zona: ' + (profile.zones?.length ? profile.zones.join(', ') : missing(profile.sellerPropertyAddress)),\n  'Presupuesto/precio: ' + missing(budget),\n  'Plazo: ' + missing(profile.timeline)\n].join(' | ');\n\nconst suggestedNext = profile.nextBestAction || (profile.interestType === 'sell'\n  ? 'Llamar para validar datos de la propiedad y agendar valuación.'\n  : 'Mandarle 2-3 opciones que encajen y proponer llamada/visita.');\nconst conversationKey = 'envios:' + String(envio.id || '');\nconst lastInboundMessage = String(inbound.mensaje || '').trim();\nconst sellerMessage = [\n  'Nuevo prospecto inmobiliario',\n  '',\n  'Nombre: ' + missing(profile.fullName || inbound.nombre_perfil),\n  'Telefono: +' + (String(profile.phone || inbound.telefono || '').replace(/^\\+/, '') || 'no confirmado'),\n  'Tipo: ' + missing(profile.interestType),\n  'Calificacion: ' + missing(profile.qualificationLevel) + ' (' + Number(profile.qualificationScore || 0) + '/100)',\n  '',\n  'Resumen:',\n  missing(profile.summary || profileSummary),\n  '',\n  'Datos clave:',\n  '- Zona: ' + (profile.zones?.length ? profile.zones.join(', ') : missing(profile.sellerPropertyAddress)),\n  '- Propiedad: ' + missing(profile.propertyType),\n  '- Presupuesto/precio: ' + missing(budget),\n  '- Timeline: ' + missing(profile.timeline),\n  '- Pago/credito: ' + missing(profile.paymentMethod || profile.financingStatus),\n  '',\n  'Ultimo mensaje:',\n  '\"' + missing(lastInboundMessage) + '\"',\n  '',\n  'Siguiente paso sugerido:',\n  suggestedNext,\n  '',\n  'Conversation key: ' + conversationKey\n].join('\\n');\n\nreturn {\n  json: {\n    ...input,\n    envioId: envio.id,\n    phone: profile.phone || inbound.telefono || envio.telefono_digits,\n    phoneNumberId: inbound.phone_number_id || '',\n    profile,\n    profileSummary,\n    currentStage,\n    commercialStatus,\n    awaitingField,\n    nextStep,\n    reply_text: replyText,\n    shouldSendReply: Boolean(decision.should_send_reply !== false && replyText && !alreadyHandoff),\n    shouldNotifySeller: Boolean((decision.should_escalate || decision.handoff_ready || currentStage === 'ready_for_handoff') && !doNotContact && !alreadyHandoff),\n    noEnviar: doNotContact,\n    sellerHandoffPayload: {\n      envioId: envio.id,\n      conversationKey,\n      sellerName: profile.assignedSeller || 'Dueño Rioble',\n      sellerPhone: profile.assignedSellerPhone || '+5213316994400',\n      summary: sellerMessage,\n      handoffPayload: { profile, qualification: { level: profile.qualificationLevel, score: profile.qualificationScore, reasons: profile.qualificationReasons }, nextBestAction: suggestedNext, source_message_id: inbound.message_id || '' }\n    },\n    technicalStatus: [input.agentDecisionStatus, currentStage, input.sellerHandoffStatus ? 'handoff_exists' : 'handoff_new'].filter(Boolean).join(';')\n  }\n};"
+      },
+      "id": "apply_business_rules_inmobiliario",
+      "name": "Apply Business Rules",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2660,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update public.envios\nset\n  etapa_conversacion = nullif($2::text, ''),\n  estatus_comercial = nullif($3::text, ''),\n  awaiting_field = nullif($4::text, ''),\n  next_step = nullif($5::text, ''),\n  perfil_inmobiliario = coalesce(nullif($6::text, '')::jsonb, '{}'::jsonb),\n  qualification_level = nullif($7::text, ''),\n  qualification_score = nullif($8::text, '')::integer,\n  assigned_seller = nullif($9::text, ''),\n  no_enviar = case when nullif($10::text, '')::boolean then true else no_enviar end,\n  no_contactar_at = case when nullif($10::text, '')::boolean then coalesce(no_contactar_at, now()) else no_contactar_at end,\n  estado = case\n    when nullif($10::text, '')::boolean then 'no_contactar'\n    when $2::text = 'not_interested' then 'no_interesado'\n    else estado\n  end,\n  updated_at = now()\nwhere id = nullif($1::text, '')::integer\nreturning id, estado, etapa_conversacion, estatus_comercial, handoff_status;",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ [ $json.envioId || '', $json.currentStage || '', $json.commercialStatus || '', $json.awaitingField || '', $json.nextStep || '', JSON.stringify($json.profile || {}), $json.profile?.qualificationLevel || '', String($json.profile?.qualificationScore || 0), $json.profile?.assignedSeller || '', String(Boolean($json.noEnviar)) ] }}",
+          "replaceEmptyStrings": false
+        }
+      },
+      "id": "actualizar_perfil_envio",
+      "name": "Actualizar perfil envio",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2880,
+        180
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "i3na2jv0MfpG9bjf",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "leftValue": "={{Boolean($json.shouldNotifySeller)}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "id": "should_notify_seller_inmobiliario",
+      "name": "Should Notify Seller?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3100,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const input = $json;\nconst apiVersion = String($env.META_GRAPH_VERSION || 'v25.0').trim();\nconst phoneNumberId = String(input.phoneNumberId || $env.META_PHONE_NUMBER_ID || $env.META_WHATSAPP_PHONE_NUMBER_ID || '').trim();\nconst token = String($env.META_WA_TOKEN || $env.META_WHATSAPP_TOKEN || '').trim();\nif (!phoneNumberId || !token) throw new Error('Faltan META_PHONE_NUMBER_ID o META_WA_TOKEN');\n\nfunction normalizeWhatsappPhone(value) {\n  let phone = String(value || '').replace(/[^\\d+]/g, '');\n  if (phone.startsWith('+')) phone = phone.slice(1);\n  if (phone.startsWith('00')) phone = phone.slice(2);\n  if (phone.startsWith('011')) phone = phone.slice(3);\n  phone = phone.replace(/\\D/g, '');\n  if (phone.length === 10) phone = '52' + phone;\n  if (phone.startsWith('521') && phone.length === 13) phone = '52' + phone.slice(3);\n  if (!/^\\d{8,15}$/.test(phone)) throw new Error('Telefono invalido para WhatsApp Cloud API: ' + value);\n  return phone;\n}\n\nconst to = normalizeWhatsappPhone(input.sellerHandoffPayload?.sellerPhone || $env.SELLER_NOTIFY_PHONE || $env.DEFAULT_SELLER_PHONE || '+5213316994400');\nconst body = String(input.sellerHandoffPayload?.summary || '').slice(0, 4096);\nconst response = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://graph.facebook.com/' + apiVersion + '/' + phoneNumberId + '/messages',\n  headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },\n  body: { messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'text', text: { preview_url: false, body } },\n  json: true,\n  returnFullResponse: true,\n  ignoreHttpStatusErrors: true,\n});\nconst responseBody = typeof response.body === 'string' ? { raw: response.body } : (response.body || {});\nconst statusCode = response.statusCode || response.status;\nconst providerMessageId = String(responseBody.messages?.[0]?.id || '').trim();\nreturn {\n  json: {\n    ...input,\n    sellerNotifyStatus: statusCode >= 200 && statusCode < 300 && providerMessageId ? 'sent' : 'failed',\n    sellerNotifyProviderMessageId: providerMessageId,\n    sellerNotifySentAt: new Date().toISOString(),\n    sellerNotifyApiResponse: responseBody,\n    sellerNotifyError: statusCode >= 200 && statusCode < 300 ? '' : ('HTTP ' + statusCode)\n  }\n};"
+      },
+      "id": "send_whatsapp_to_seller_inmobiliario",
+      "name": "Send WhatsApp to Seller",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3320,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with inserted as (\n  insert into public.seller_handoffs (\n    envio_id,\n    conversation_key,\n    seller_name,\n    seller_phone,\n    status,\n    provider_message_id,\n    handoff_payload,\n    error_message,\n    n8n_execution_id\n  )\n  values (\n    nullif($1::text, '')::integer,\n    nullif($2::text, ''),\n    nullif($3::text, ''),\n    nullif($4::text, ''),\n    coalesce(nullif($5::text, ''), 'sent'),\n    nullif($6::text, ''),\n    coalesce(nullif($7::text, '')::jsonb, '{}'::jsonb),\n    nullif($8::text, ''),\n    nullif($9::text, '')\n  )\n  on conflict (conversation_key)\n  do update set\n    seller_name = coalesce(excluded.seller_name, public.seller_handoffs.seller_name),\n    seller_phone = coalesce(excluded.seller_phone, public.seller_handoffs.seller_phone),\n    status = case when public.seller_handoffs.status in ('sent', 'delivered', 'read') then public.seller_handoffs.status else excluded.status end,\n    provider_message_id = coalesce(public.seller_handoffs.provider_message_id, excluded.provider_message_id),\n    handoff_payload = coalesce(public.seller_handoffs.handoff_payload, '{}'::jsonb) || excluded.handoff_payload,\n    error_message = coalesce(excluded.error_message, public.seller_handoffs.error_message),\n    updated_at = now()\n  returning *\n), updated_envio as (\n  update public.envios e\n  set\n    handoff_status = inserted.status,\n    handoff_at = case when inserted.status in ('sent', 'delivered', 'read') then now() else e.handoff_at end,\n    etapa_conversacion = case when inserted.status in ('sent', 'delivered', 'read') then 'handoff_sent' else e.etapa_conversacion end,\n    estatus_comercial = case when inserted.status in ('sent', 'delivered', 'read') then 'asignado_a_vendedor' else e.estatus_comercial end,\n    next_step = case when inserted.status in ('sent', 'delivered', 'read') then 'Seguimiento humano por vendedor' else e.next_step end,\n    updated_at = now()\n  from inserted\n  where e.id = inserted.envio_id\n  returning e.id\n)\nselect inserted.id::text as \"handoffUuid\", inserted.status, inserted.provider_message_id as \"providerMessageId\", (select count(*) from updated_envio)::int as \"updatedEnvioCount\"\nfrom inserted;",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ [ $json.sellerHandoffPayload?.envioId || '', $json.sellerHandoffPayload?.conversationKey || '', $json.sellerHandoffPayload?.sellerName || '', $json.sellerHandoffPayload?.sellerPhone || '', $json.sellerNotifyStatus || '', $json.sellerNotifyProviderMessageId || '', JSON.stringify($json.sellerHandoffPayload?.handoffPayload || {}), $json.sellerNotifyError || '', String($execution.id) ] }}",
+          "replaceEmptyStrings": false
+        }
+      },
+      "id": "record_handoff_event_inmobiliario",
+      "name": "Record Handoff Event",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3540,
+        -20
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "i3na2jv0MfpG9bjf",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "leftValue": "={{Boolean($json.shouldSendReply && (!($json.shouldNotifySeller) || $json.sellerNotifyStatus === \"sent\"))}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "id": "should_send_reply_inmobiliario",
+      "name": "Should Send Reply?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3760,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const input = $json;\nconst apiVersion = String($env.META_GRAPH_VERSION || 'v25.0').trim();\nconst phoneNumberId = String(input.phoneNumberId || $env.META_PHONE_NUMBER_ID || $env.META_WHATSAPP_PHONE_NUMBER_ID || '').trim();\nconst token = String($env.META_WA_TOKEN || $env.META_WHATSAPP_TOKEN || '').trim();\nif (!phoneNumberId || !token) throw new Error('Faltan META_PHONE_NUMBER_ID o META_WA_TOKEN');\n\nfunction normalizeWhatsappPhone(value) {\n  let phone = String(value || '').replace(/[^\\d+]/g, '');\n  if (phone.startsWith('+')) phone = phone.slice(1);\n  if (phone.startsWith('00')) phone = phone.slice(2);\n  if (phone.startsWith('011')) phone = phone.slice(3);\n  phone = phone.replace(/\\D/g, '');\n  if (phone.length === 10) phone = '52' + phone;\n  if (phone.startsWith('521') && phone.length === 13) phone = '52' + phone.slice(3);\n  if (!/^\\d{8,15}$/.test(phone)) throw new Error('Telefono invalido para WhatsApp Cloud API: ' + value);\n  return phone;\n}\n\nconst to = normalizeWhatsappPhone(input.phone);\nconst body = String(input.reply_text || '').slice(0, 4096);\nconst response = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://graph.facebook.com/' + apiVersion + '/' + phoneNumberId + '/messages',\n  headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },\n  body: { messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'text', text: { preview_url: false, body } },\n  json: true,\n  returnFullResponse: true,\n  ignoreHttpStatusErrors: true,\n});\nconst responseBody = typeof response.body === 'string' ? { raw: response.body } : (response.body || {});\nconst statusCode = response.statusCode || response.status;\nconst providerMessageId = String(responseBody.messages?.[0]?.id || '').trim();\nreturn {\n  json: {\n    ...input,\n    replySendStatus: statusCode >= 200 && statusCode < 300 && providerMessageId ? 'sent' : 'failed',\n    replyProviderMessageId: providerMessageId,\n    replySentAt: new Date().toISOString(),\n    replyApiResponse: responseBody,\n    replyError: statusCode >= 200 && statusCode < 300 ? '' : ('HTTP ' + statusCode)\n  }\n};"
+      },
+      "id": "send_whatsapp_reply_inmobiliario",
+      "name": "Send WhatsApp Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3980,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into public.conversaciones (\n  id,\n  timestamp,\n  direccion,\n  telefono,\n  wa_id,\n  nombre_perfil,\n  mensaje,\n  tipo,\n  message_id,\n  phone_number_id,\n  display_phone_number,\n  payload\n)\nvalues (\n  nullif($1::text, '')::integer,\n  coalesce(nullif($2::text, '')::timestamptz, now()),\n  'saliente',\n  nullif($3::text, ''),\n  nullif($3::text, ''),\n  'Sofía Tapia',\n  nullif($4::text, ''),\n  'text',\n  nullif($5::text, ''),\n  nullif($6::text, ''),\n  nullif($7::text, ''),\n  coalesce(nullif($8::text, '')::jsonb, '{}'::jsonb)\n)\non conflict (message_id) where message_id is not null\ndo nothing\nreturning conversation_pk, id, timestamp, direccion, message_id;",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ [ $json.envioId || '', $json.replySentAt || '', $json.phone || '', $json.reply_text || '', $json.replyProviderMessageId || '', $json.phoneNumberId || '', '', JSON.stringify({ source: 'agent_reply', response: $json.replyApiResponse || {}, status: $json.replySendStatus || '', error: $json.replyError || '' }) ] }}",
+          "replaceEmptyStrings": false
+        }
+      },
+      "id": "insertar_respuesta_outbound_inmobiliario",
+      "name": "Insertar respuesta outbound",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4200,
+        80
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "i3na2jv0MfpG9bjf",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Meta Webhook Verify": {
+      "main": [
+        [
+          {
+            "node": "Validar verificacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar verificacion": {
+      "main": [
+        [
+          {
+            "node": "Responder verificacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Meta Webhook Mensajes": {
+      "main": [
+        [
+          {
+            "node": "Responder mensajes",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Normalizar mensajes",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Normalizar estados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar mensajes": {
+      "main": [
+        [
+          {
+            "node": "Insertar conversacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar estados": {
+      "main": [
+        [
+          {
+            "node": "Insertar status event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insertar status event": {
+      "main": [
+        [
+          {
+            "node": "Actualizar estado envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insertar conversacion": {
+      "main": [
+        [
+          {
+            "node": "Marcar envio respondio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar envio respondio": {
+      "main": [
+        [
+          {
+            "node": "Leer contexto inmobiliario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer contexto inmobiliario": {
+      "main": [
+        [
+          {
+            "node": "Build Conversation Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Conversation Context": {
+      "main": [
+        [
+          {
+            "node": "Call Agent Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Agent Decision": {
+      "main": [
+        [
+          {
+            "node": "Resolve Final Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Final Decision": {
+      "main": [
+        [
+          {
+            "node": "Apply Business Rules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Business Rules": {
+      "main": [
+        [
+          {
+            "node": "Actualizar perfil envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar perfil envio": {
+      "main": [
+        [
+          {
+            "node": "Should Notify Seller?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Notify Seller?": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp to Seller",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Should Send Reply?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp to Seller": {
+      "main": [
+        [
+          {
+            "node": "Record Handoff Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Handoff Event": {
+      "main": [
+        [
+          {
+            "node": "Should Send Reply?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Send Reply?": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Send WhatsApp Reply": {
+      "main": [
+        [
+          {
+            "node": "Insertar respuesta outbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "nodeGroups": [],
+  "pinData": {},
+  "sourceWorkflowId": null,
+  "tags": []
+}

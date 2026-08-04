@@ -16,3 +16,6 @@ __pycache__/
 .env.*
 *.pem
 *.key
+
+# Raw n8n exports from live workflows
+workflows/live/

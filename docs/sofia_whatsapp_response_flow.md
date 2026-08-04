@@ -111,3 +111,13 @@ node tools/extend_live_respuestas_workflow.js <live-workflow.json> workflows/Rio
 ```
 
 Importar el JSON generado como copia inactiva, probar manualmente y activar solo cuando no duplique respuestas ni notificaciones.
+
+## Artefacto Generado
+
+La copia importable actual queda en:
+
+```text
+workflows/generated/Rioble_WhatsApp_Respuestas_MVP_Inmobiliaria.json
+```
+
+Debe importarse en n8n como workflow inactivo. El path del webhook se cambia a `rioble-whatsapp-webhook-mvp` para evitar choque con el flujo vivo.

@@ -113,6 +113,9 @@ workflow.description = 'Copia inactiva del webhook de respuestas con calificaci√
 // Avoid webhook-path collision if somebody accidentally activates the copy.
 nodeByName('Meta Webhook Verify').parameters.path = 'rioble-whatsapp-webhook-mvp';
 nodeByName('Meta Webhook Mensajes').parameters.path = 'rioble-whatsapp-webhook-mvp';
+delete nodeByName('Meta Webhook Verify').webhookId;
+delete nodeByName('Meta Webhook Mensajes').webhookId;
+delete workflow.meta;
 
 const readContextQuery = `with inbound as (
   select
