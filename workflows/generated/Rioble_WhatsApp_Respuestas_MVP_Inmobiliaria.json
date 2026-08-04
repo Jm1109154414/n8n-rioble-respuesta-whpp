@@ -275,7 +275,7 @@
           },
           "conditions": [
             {
-              "leftValue": "={{(() => { const allowed = String($env.RIOBLE_TEST_ALLOWLIST_PHONE || '').replace(/\\D/g, ''); const incoming = String($('Normalizar mensajes').first().json.telefono || '').replace(/\\D/g, ''); if (!allowed) return false; const variants = new Set([allowed]); if (allowed.length === 10) variants.add('52' + allowed); if (allowed.startsWith('521') && allowed.length === 13) variants.add('52' + allowed.slice(3)); if (allowed.startsWith('52') && allowed.length === 12) variants.add('521' + allowed.slice(2)); return variants.has(incoming); })()}}",
+              "leftValue": "={{(() => { const rawAllowed = String($env.RIOBLE_TEST_ALLOWLIST_PHONE || '').split(',').map((item) => item.replace(/\\D/g, '')).filter(Boolean); const incoming = String($('Normalizar mensajes').first().json.telefono || '').replace(/\\D/g, ''); if (!rawAllowed.length) return false; const variants = new Set(); for (const allowed of rawAllowed) { variants.add(allowed); if (allowed.length === 10) variants.add('52' + allowed); if (allowed.startsWith('521') && allowed.length === 13) variants.add('52' + allowed.slice(3)); if (allowed.startsWith('52') && allowed.length === 12) variants.add('521' + allowed.slice(2)); } return variants.has(incoming); })()}}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",

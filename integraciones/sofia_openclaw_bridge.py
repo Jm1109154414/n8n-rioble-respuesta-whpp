@@ -58,6 +58,11 @@ def phones_match(left: Any, right: Any) -> bool:
     return normalize_phone(left) == normalize_phone(right)
 
 
+def allowed_test_phones() -> list[str]:
+    raw = os.environ.get("RIOBLE_TEST_ALLOWLIST_PHONE", "")
+    return [phone for phone in (normalize_phone(item) for item in raw.split(",")) if phone]
+
+
 def response_template(reason: str, status: str = "error") -> dict[str, Any]:
     should_send = status not in {"error", "ignored"}
     return {
@@ -375,9 +380,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(400, {"ok": False, "error": "invalid_json"})
             return
 
-        allow_phone = os.environ.get("RIOBLE_TEST_ALLOWLIST_PHONE", "")
         lead_phone = ((payload.get("lead") or {}).get("phone")) if isinstance(payload, dict) else ""
-        if allow_phone and not phones_match(lead_phone, allow_phone):
+        allowed_phones = allowed_test_phones()
+        normalized_lead_phone = normalize_phone(lead_phone)
+        if allowed_phones and normalized_lead_phone not in allowed_phones:
             self.send_json(200, response_template("Telefono fuera de allowlist de pruebas.", status="ignored"))
             return
 
