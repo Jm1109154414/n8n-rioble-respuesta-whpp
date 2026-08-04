@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rioble.com/schemas/sofia_whatsapp_response_v1.schema.json",
+  "title": "Sofia WhatsApp Response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ok", "decision", "reply", "handoff", "qualification", "captured_data", "missing_data", "internal_report"],
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "intent", "lead_status", "currentStage", "nextStep", "awaitingField", "traffic_light"],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["reply", "ask_next_question", "handoff", "mark_do_not_contact", "close", "no_action"]
+        },
+        "intent": {
+          "type": "string"
+        },
+        "lead_status": {
+          "type": "string",
+          "enum": ["nuevo", "en_conversacion", "perfil_incompleto", "necesidad_detectada", "prospecto_caliente", "asignado_a_vendedor", "seguimiento_humano", "nutricion", "no_interesado", "no_contactar"]
+        },
+        "currentStage": {
+          "type": "string",
+          "enum": ["new_reply", "detect_interest", "qualify_buyer", "qualify_seller", "qualify_renter", "qualify_investor", "ready_for_handoff", "handoff_sent", "nurture", "not_interested", "do_not_contact"]
+        },
+        "nextStep": {
+          "type": "string"
+        },
+        "awaitingField": {
+          "type": "string"
+        },
+        "traffic_light": {
+          "type": "string",
+          "enum": ["green", "yellow", "red", "unknown"]
+        }
+      }
+    },
+    "reply": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["should_send", "text"],
+      "properties": {
+        "should_send": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 1200
+        }
+      }
+    },
+    "handoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "ready", "reason", "assigned_seller", "assigned_seller_phone"],
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "assigned_seller": {
+          "type": "string"
+        },
+        "assigned_seller_phone": {
+          "type": "string"
+        }
+      }
+    },
+    "qualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "score", "reasons"],
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["hot", "warm", "cold", "nurture", "do_not_contact"]
+        },
+        "score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "captured_data": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "missing_data": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "internal_report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "status", "traffic_light", "next_step"],
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "traffic_light": {
+          "type": "string",
+          "enum": ["green", "yellow", "red", "unknown"]
+        },
+        "next_step": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

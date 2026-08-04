@@ -1,0 +1,43 @@
+{
+  "ok": true,
+  "decision": {
+    "action": "ask_next_question",
+    "intent": "qualify_buyer",
+    "lead_status": "necesidad_detectada",
+    "currentStage": "qualify_buyer",
+    "nextStep": "Pedir presupuesto aproximado",
+    "awaitingField": "budgetMax",
+    "traffic_light": "yellow"
+  },
+  "reply": {
+    "should_send": true,
+    "text": "Va, Carlos. Para ubicarte bien y no mandarte cosas fuera de rango, ¿más o menos en qué presupuesto te gustaría moverte?"
+  },
+  "handoff": {
+    "required": false,
+    "ready": false,
+    "reason": "",
+    "assigned_seller": "Dueño Rioble",
+    "assigned_seller_phone": "+5213316994400"
+  },
+  "qualification": {
+    "level": "warm",
+    "score": 55,
+    "reasons": ["Confirmó interés actual y tipo de propiedad; falta presupuesto."]
+  },
+  "captured_data": {
+    "interestType": "buy",
+    "propertyType": "departamento",
+    "zones": ["Zapopan"],
+    "currency": "MXN",
+    "summary": "Busca departamento en Zapopan; presupuesto no confirmado.",
+    "nextBestAction": "Pedir presupuesto aproximado."
+  },
+  "missing_data": ["budgetMax"],
+  "internal_report": {
+    "summary": "Lead respondió que sigue buscando departamento en Zapopan. Falta presupuesto.",
+    "status": "perfilando",
+    "traffic_light": "yellow",
+    "next_step": "Esperar presupuesto del lead."
+  }
+}

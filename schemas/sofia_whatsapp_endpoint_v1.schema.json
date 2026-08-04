@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rioble.com/schemas/sofia_whatsapp_endpoint_v1.schema.json",
+  "title": "Sofia WhatsApp Endpoint v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event", "lead", "message", "context", "permissions", "mode"],
+  "properties": {
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "message_id"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["incoming_message", "outbound_request", "followup_request", "handoff_request", "do_not_contact"]
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "message_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "lead": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phone"],
+      "properties": {
+        "lead_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "phone": {
+          "type": "string",
+          "minLength": 8
+        }
+      }
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lead_origin"],
+      "properties": {
+        "lead_origin": {
+          "type": "string",
+          "enum": ["base_historica_rioble", "formulario_rioble", "dashboard_rioble", "google_sheet", "crm", "manual", "unknown"]
+        },
+        "conversation_key": {
+          "type": "string"
+        },
+        "interest_history": {
+          "type": "string"
+        },
+        "property_type": {
+          "type": "string"
+        },
+        "zone": {
+          "type": "string"
+        },
+        "budget": {
+          "type": "string"
+        },
+        "intent": {
+          "type": "string"
+        },
+        "last_contact_at": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "stage": {
+          "type": "string",
+          "enum": ["new_reply", "detect_interest", "qualify_buyer", "qualify_seller", "qualify_renter", "qualify_investor", "ready_for_handoff", "handoff_sent", "nurture", "not_interested", "do_not_contact"]
+        },
+        "traffic_light": {
+          "type": "string",
+          "enum": ["unknown", "green", "yellow", "red"]
+        },
+        "do_not_contact": {
+          "type": "boolean"
+        },
+        "followup_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        }
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["can_send_whatsapp", "can_register_handoff", "can_notify_owner"],
+      "properties": {
+        "can_send_whatsapp": {
+          "type": "boolean"
+        },
+        "can_register_handoff": {
+          "type": "boolean"
+        },
+        "can_notify_owner": {
+          "type": "boolean"
+        }
+      }
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["draft", "execute", "classify"]
+    }
+  }
+}

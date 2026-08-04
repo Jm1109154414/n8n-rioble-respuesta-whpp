@@ -1,0 +1,38 @@
+{
+  "event": {
+    "type": "incoming_message",
+    "timestamp": "2026-08-04T18:30:00.000Z",
+    "message_id": "wamid.HBgNNTIxMzMxMjM0NTY3OBUCABIYFDNB..."
+  },
+  "lead": {
+    "lead_id": "wa:5213312345678",
+    "name": "Carlos",
+    "phone": "5213312345678"
+  },
+  "message": {
+    "text": "Sí, sigo buscando departamento en Zapopan"
+  },
+  "context": {
+    "lead_origin": "base_historica_rioble",
+    "conversation_key": "whatsapp:5213312345678",
+    "interest_history": "departamentos",
+    "property_type": "departamento",
+    "zone": "Zapopan",
+    "budget": "",
+    "intent": "compra",
+    "last_contact_at": "2026-06-09T15:49:54.000Z",
+    "notes": "Respondió a campaña de reactivación."
+  },
+  "status": {
+    "stage": "detect_interest",
+    "traffic_light": "unknown",
+    "do_not_contact": false,
+    "followup_count": 0
+  },
+  "permissions": {
+    "can_send_whatsapp": false,
+    "can_register_handoff": true,
+    "can_notify_owner": true
+  },
+  "mode": "draft"
+}

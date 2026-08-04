@@ -1,0 +1,45 @@
+{
+  "ok": true,
+  "decision": {
+    "action": "handoff",
+    "intent": "ready_for_handoff",
+    "lead_status": "prospecto_caliente",
+    "currentStage": "ready_for_handoff",
+    "nextStep": "Notificar al especialista con resumen",
+    "awaitingField": "none",
+    "traffic_light": "green"
+  },
+  "reply": {
+    "should_send": true,
+    "text": "Perfecto, con eso ya puedo ubicar mejor opciones. Enseguida te contacta mi compañero especialista en departamentos y yo le paso todo el contexto para que no tengas que repetir nada."
+  },
+  "handoff": {
+    "required": true,
+    "ready": true,
+    "reason": "Tiene tipo de propiedad, zona y presupuesto.",
+    "assigned_seller": "Dueño Rioble",
+    "assigned_seller_phone": "+5213316994400"
+  },
+  "qualification": {
+    "level": "hot",
+    "score": 85,
+    "reasons": ["Tiene zona, tipo de propiedad y presupuesto.", "Pidió avanzar con opciones."]
+  },
+  "captured_data": {
+    "interestType": "buy",
+    "propertyType": "departamento",
+    "zones": ["Zapopan"],
+    "budgetMax": "3000000",
+    "currency": "MXN",
+    "summary": "Busca departamento en Zapopan con presupuesto aproximado de 3 mdp.",
+    "nextBestAction": "Compartir opciones puntuales y proponer llamada o visita.",
+    "handoffReady": true
+  },
+  "missing_data": [],
+  "internal_report": {
+    "summary": "Lead listo para especialista: departamento en Zapopan, presupuesto 3 mdp.",
+    "status": "listo_para_especialista",
+    "traffic_light": "green",
+    "next_step": "Registrar handoff y notificar al dueño."
+  }
+}
