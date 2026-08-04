@@ -239,6 +239,40 @@
           },
           "conditions": [
             {
+              "leftValue": "={{Boolean($json.conversation_pk && $json.id)}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "id": "new_inbound_message_inmobiliario",
+      "name": "New Inbound Message?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1560,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
               "leftValue": "={{(() => { const allowed = String($env.RIOBLE_TEST_ALLOWLIST_PHONE || '').replace(/\\D/g, ''); const incoming = String($('Normalizar mensajes').first().json.telefono || '').replace(/\\D/g, ''); if (!allowed) return false; const variants = new Set([allowed]); if (allowed.length === 10) variants.add('52' + allowed); if (allowed.startsWith('521') && allowed.length === 13) variants.add('52' + allowed.slice(3)); if (allowed.startsWith('52') && allowed.length === 12) variants.add('521' + allowed.slice(2)); return variants.has(incoming); })()}}",
               "rightValue": true,
               "operator": {
@@ -603,7 +637,7 @@
       "main": [
         [
           {
-            "node": "Marcar envio respondio",
+            "node": "New Inbound Message?",
             "type": "main",
             "index": 0
           }
@@ -619,6 +653,18 @@
             "index": 0
           }
         ]
+      ]
+    },
+    "New Inbound Message?": {
+      "main": [
+        [
+          {
+            "node": "Marcar envio respondio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
       ]
     },
     "Leer contexto inmobiliario": {

@@ -806,6 +806,7 @@ from inserted;`;
 
 const newNodes = [
   postgresNode('Leer contexto inmobiliario', 'leer_contexto_inmobiliario', [1780, 180], readContextQuery, "={{ [ $json.id || '', $('Normalizar mensajes').first().json.telefono || '', $('Normalizar mensajes').first().json.message_id || '' ] }}"),
+  ifNode('New Inbound Message?', 'new_inbound_message_inmobiliario', [1560, 208], '={{Boolean($json.conversation_pk && $json.id)}}'),
   allowlistIfNode('Only Test Phone?', 'only_test_phone_inmobiliario', [2000, 180]),
   codeNode('Build Conversation Context', 'build_conversation_context_inmobiliario', [2220, 180], buildContextCode),
   httpNode('Call Agent Decision', 'call_agent_decision_inmobiliario', [2440, 180], {
@@ -839,6 +840,12 @@ workflow.nodes.push(...newNodes);
 
 workflow.connections['Marcar envio respondio'] = {
   main: [[{ node: 'Leer contexto inmobiliario', type: 'main', index: 0 }]],
+};
+workflow.connections['Insertar conversacion'] = {
+  main: [[{ node: 'New Inbound Message?', type: 'main', index: 0 }]],
+};
+workflow.connections['New Inbound Message?'] = {
+  main: [[{ node: 'Marcar envio respondio', type: 'main', index: 0 }], []],
 };
 workflow.connections['Leer contexto inmobiliario'] = {
   main: [[{ node: 'Only Test Phone?', type: 'main', index: 0 }]],
