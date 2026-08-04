@@ -231,7 +231,7 @@ if (!optOutSignal && !notInterestedSignal) {
   if (has(lower, /\\b(vender|vendo|venta de mi|poner en venta|valuaci[oó]n|aval[uú]o|cu[aá]nto vale)\\b/i)) interestTypeSignal = 'sell';
   else if (has(lower, /\\b(rentar|renta|arrendar|alquilar|mudanza|mensual)\\b/i)) interestTypeSignal = 'rent';
   else if (has(lower, /\\b(invertir|inversi[oó]n|plusval[ií]a|rentabilidad|patrimonio)\\b/i)) interestTypeSignal = 'invest';
-  else if (has(lower, /\\b(comprar|busco|quiero una|quiero un|departamento|depa|casa|terreno|bodega|oficina|local)\\b/i)) interestTypeSignal = 'buy';
+  else if (has(lower, /\\b(comprar|compra|busco comprar|quiero comprar|adquirir)\\b/i)) interestTypeSignal = 'buy';
 }
 
 let propertyTypeSignal = '';

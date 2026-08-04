@@ -104,6 +104,20 @@ El lead dijo que no busca comprar/invertir. Sofía responde una sola vez con el 
 
 El lead pidió baja/no contacto. Se marca `no_enviar=true`, no hay handoff y no se insiste.
 
+## Orden De Perfilamiento
+
+Después del mensaje 1 de reactivación, si el lead responde de forma genérica como "sí me interesa", Sofía no debe saltar directo a tipo de propiedad. Primero debe detectar intención actual:
+
+```text
+comprar, vender, invertir o rentar
+```
+
+Luego abre la ruta correcta:
+
+- Compra/inversión/renta: preguntar qué tipo de propiedad busca.
+- Venta: preguntar qué propiedad quiere vender o en qué zona está.
+- Después: zona en Jalisco y presupuesto/precio según aplique.
+
 ## SQL Necesario
 
 Aplicar antes de importar o activar el flujo adaptado:
