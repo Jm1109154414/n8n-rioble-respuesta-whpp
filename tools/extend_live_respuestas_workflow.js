@@ -126,6 +126,77 @@ delete nodeByName('Meta Webhook Verify').webhookId;
 delete nodeByName('Meta Webhook Mensajes').webhookId;
 delete workflow.meta;
 
+const insertInboundQuery = `WITH incoming AS (
+ SELECT regexp_replace(coalesce($1::text, ''), '\\D', '', 'g') AS phone_digits
+),
+variants AS (
+ SELECT phone_digits FROM incoming WHERE phone_digits != ''
+ UNION
+ SELECT '52' || phone_digits FROM incoming WHERE length(phone_digits) = 10
+ UNION
+ SELECT '52' || substring(phone_digits from 4) FROM incoming WHERE phone_digits LIKE '521%' AND length(phone_digits) = 13
+ UNION
+ SELECT '521' || substring(phone_digits from 3) FROM incoming WHERE phone_digits LIKE '52%' AND length(phone_digits) = 12
+),
+matched AS (
+ SELECT e.id, e.nombre
+ FROM envios e
+ JOIN variants v ON e.telefono_digits = v.phone_digits
+ ORDER BY e.ultimo_envio DESC NULLS LAST, e.id DESC
+ LIMIT 1
+)
+INSERT INTO conversaciones (
+ id,
+ timestamp,
+ direccion,
+ telefono,
+ wa_id,
+ nombre_perfil,
+ mensaje,
+ tipo,
+ message_id,
+ phone_number_id,
+ display_phone_number,
+ payload
+)
+VALUES (
+ (SELECT id FROM matched),
+ NULLIF($2::text, '')::timestamptz,
+ NULLIF($3::text, ''),
+ NULLIF($4::text, ''),
+ NULLIF($5::text, ''),
+ COALESCE(NULLIF($6::text, ''), (SELECT nombre FROM matched), ''),
+ NULLIF($7::text, ''),
+ NULLIF($8::text, ''),
+ NULLIF($9::text, ''),
+ NULLIF($10::text, ''),
+ NULLIF($11::text, ''),
+ COALESCE(NULLIF($12::text, '')::jsonb, '{}'::jsonb)
+)
+ON CONFLICT (message_id) WHERE message_id IS NOT NULL
+DO NOTHING
+RETURNING
+ conversation_pk,
+ id,
+ timestamp,
+ direccion,
+ telefono,
+ wa_id,
+ nombre_perfil,
+ mensaje,
+ tipo,
+ message_id;`;
+
+nodeByName('Insertar conversacion').parameters = {
+  operation: 'executeQuery',
+  query: insertInboundQuery,
+  options: {
+    queryBatching: 'independently',
+    queryReplacement: "={{ [ $json.telefono || '', $json.timestamp || '', $json.direccion || '', $json.telefono || '', $json.wa_id || '', $json.nombre_perfil || '', $json.mensaje || '', $json.tipo || '', $json.message_id || '', $json.phone_number_id || '', $json.display_phone_number || '', (typeof $json.payload === 'string' ? $json.payload : JSON.stringify($json.payload || {})) ] }}",
+    replaceEmptyStrings: false,
+  },
+};
+
 const readContextQuery = `with inbound as (
   select
     nullif($1::text, '')::integer as envio_id,
