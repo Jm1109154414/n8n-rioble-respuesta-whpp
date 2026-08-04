@@ -72,6 +72,18 @@ Documentación:
 docs/sofia_whatsapp_endpoint_contract_v1.md
 ```
 
+En pruebas, ese endpoint lo atiende el bridge local:
+
+```bash
+RIOBLE_TEST_ALLOWLIST_PHONE=+5218445283282 python3 integraciones/sofia_openclaw_bridge.py
+```
+
+Desde n8n debe apuntar a:
+
+```text
+http://host.docker.internal:8787/decide-whatsapp
+```
+
 Para el MVP, el endpoint puede responder en formato plano compatible con n8n o en el contrato v1 estructurado. El nodo `Resolve Final Decision` normaliza ambos formatos.
 
 ## Estados Finales

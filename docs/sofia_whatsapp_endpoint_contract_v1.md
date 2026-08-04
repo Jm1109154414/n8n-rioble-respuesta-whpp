@@ -6,6 +6,29 @@ Endpoint oficial para que el runtime de WhatsApp consulte a Sofía Tapia como pr
 POST /decide-whatsapp
 ```
 
+## Implementación MVP Con OpenClaw
+
+Para este MVP, `/decide-whatsapp` se atiende con un bridge local:
+
+```text
+integraciones/sofia_openclaw_bridge.py
+```
+
+El bridge recibe el JSON de n8n, valida la allowlist de prueba y ejecuta a Sofía mediante OpenClaw:
+
+```bash
+openclaw agent --agent realestate-sales --session-key agent:realestate-sales:whatsapp-<telefono> --message-file <payload.md> --json
+```
+
+Esto aprovecha la conexión existente de OpenClaw y carga los core files reales del agente inmobiliario (`AGENTS.md`, `SOUL.md`, `TOOLS.md`, `IDENTITY.md`, `USER.md`). No requiere usar el endpoint público de Workspace Agents ni un token admin de ChatGPT.
+
+Para n8n, el valor recomendado durante pruebas es:
+
+```text
+AGENT_DECISION_URL=http://host.docker.internal:8787/decide-whatsapp
+RIOBLE_TEST_ALLOWLIST_PHONE=+5218445283282
+```
+
 El canal de conversación es siempre WhatsApp. Si el lead viene de base histórica, formulario, dashboard o carga manual, eso se expresa en `lead_origin`, no como otro canal.
 
 ## Autenticación
