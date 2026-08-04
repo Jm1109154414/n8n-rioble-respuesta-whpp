@@ -574,6 +574,7 @@ const defaultHandoffReply = profile.interestType === 'sell'
     ? 'Perfecto, con eso ya puedo ubicar mejor opciones. Te conecto con un compañero especialista para que te comparta propiedades que encajen contigo.'
     : 'Perfecto, ya tengo lo importante. Te conecto con un compañero especialista para que te comparta el siguiente paso.';
 const replyText = String(decision.reply_text || '').trim() || (currentStage === 'ready_for_handoff' ? defaultHandoffReply : '');
+const canReplyWithoutHandoff = Boolean(replyText && !alreadyHandoff && !doNotContact);
 const budget = profile.interestType === 'rent' ? profile.rentBudget : (profile.budgetMax || profile.sellerAskingPrice);
 const profileSummary = profile.summary || [
   'Interés: ' + missing(profile.interestType),
@@ -628,7 +629,7 @@ return {
     awaitingField,
     nextStep,
     reply_text: replyText,
-    shouldSendReply: Boolean(decision.should_send_reply !== false && replyText && !alreadyHandoff),
+    shouldSendReply: Boolean(canReplyWithoutHandoff && (decision.should_send_reply !== false || currentStage !== 'ready_for_handoff')),
     shouldNotifySeller: Boolean((decision.should_escalate || decision.handoff_ready || currentStage === 'ready_for_handoff') && !doNotContact && !alreadyHandoff),
     noEnviar: doNotContact,
     sellerHandoffPayload: {
