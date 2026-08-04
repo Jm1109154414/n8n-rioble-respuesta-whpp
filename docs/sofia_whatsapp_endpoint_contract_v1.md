@@ -25,9 +25,18 @@ Esto aprovecha la conexión existente de OpenClaw y carga los core files reales 
 Para n8n, el valor recomendado durante pruebas es:
 
 ```text
-AGENT_DECISION_URL=http://host.docker.internal:8787/decide-whatsapp
+AGENT_DECISION_URL=http://host.docker.internal:8787
+AGENT_DECISION_TOKEN=<token-local-del-bridge>
 RIOBLE_TEST_ALLOWLIST_PHONE=+5218445283282
 ```
+
+El nodo `Call Agent Decision` construye la URL final como:
+
+```text
+$AGENT_DECISION_URL/decide-whatsapp
+```
+
+También acepta que `AGENT_DECISION_URL` ya venga con `/decide-whatsapp`; en ese caso lo normaliza para no duplicar el path.
 
 El canal de conversación es siempre WhatsApp. Si el lead viene de base histórica, formulario, dashboard o carga manual, eso se expresa en `lead_origin`, no como otro canal.
 
@@ -42,6 +51,8 @@ X-RealEstate-Bridge-Source: real-estate-whatsapp-agent-runtime
 ```
 
 Si falta el token o no coincide, el servicio debe responder `401` y no generar respuesta.
+
+No mezclar este token con `META_WHATSAPP_TOKEN`: `AGENT_DECISION_TOKEN` protege la consulta al agente, mientras `META_WHATSAPP_TOKEN` solo sirve para enviar mensajes por WhatsApp Cloud API.
 
 ## Request
 

@@ -803,7 +803,7 @@ const newNodes = [
   codeNode('Build Conversation Context', 'build_conversation_context_inmobiliario', [2220, 180], buildContextCode),
   httpNode('Call Agent Decision', 'call_agent_decision_inmobiliario', [2440, 180], {
     method: 'POST',
-    url: "={{(($env.AGENT_DECISION_URL || '').replace(/\\/decide(?:-instagram|-whatsapp)?$/, '/decide-whatsapp')) || 'http://host.docker.internal:8787/decide-whatsapp'}}",
+    url: "={{(() => { const base = String($env.AGENT_DECISION_URL || '').trim(); if (!base) return 'http://host.docker.internal:8787/decide-whatsapp'; return base.replace(/\\/+$/, '').replace(/\\/decide(?:-instagram|-whatsapp)?$/, '') + '/decide-whatsapp'; })()}}",
     sendHeaders: true,
     headerParameters: {
       parameters: [

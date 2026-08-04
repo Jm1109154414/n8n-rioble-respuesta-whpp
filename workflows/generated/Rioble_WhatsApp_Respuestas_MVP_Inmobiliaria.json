@@ -278,7 +278,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{(($env.AGENT_DECISION_URL || '').replace(/\\/decide(?:-instagram|-whatsapp)?$/, '/decide-whatsapp')) || 'http://host.docker.internal:8787/decide-whatsapp'}}",
+        "url": "={{(() => { const base = String($env.AGENT_DECISION_URL || '').trim(); if (!base) return 'http://host.docker.internal:8787/decide-whatsapp'; return base.replace(/\\/+$/, '').replace(/\\/decide(?:-instagram|-whatsapp)?$/, '') + '/decide-whatsapp'; })()}}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
