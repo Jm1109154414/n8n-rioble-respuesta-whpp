@@ -665,7 +665,13 @@ set
 where id = nullif($1::text, '')::integer
 returning id, estado, etapa_conversacion, estatus_comercial, handoff_status;`;
 
-const sendReplyCode = `const input = $json;
+const sendReplyCode = `let input = $json;
+try {
+  const base = $('Apply Business Rules').first().json;
+  if (base && (base.reply_text || base.sellerHandoffPayload) && !($json.reply_text || $json.sellerHandoffPayload)) {
+    input = base;
+  }
+} catch {}
 const apiVersion = String($env.META_GRAPH_VERSION || 'v25.0').trim();
 const phoneNumberId = String(input.phoneNumberId || $env.META_PHONE_NUMBER_ID || $env.META_WHATSAPP_PHONE_NUMBER_ID || '').trim();
 const token = String($env.META_WA_TOKEN || $env.META_WHATSAPP_TOKEN || '').trim();
@@ -821,10 +827,10 @@ const newNodes = [
   codeNode('Resolve Final Decision', 'resolve_final_decision_inmobiliario', [2660, 180], resolveDecisionCode),
   codeNode('Apply Business Rules', 'apply_business_rules_inmobiliario', [2880, 180], applyRulesCode),
   postgresNode('Actualizar perfil envio', 'actualizar_perfil_envio', [3100, 180], updateProfileQuery, "={{ [ $json.envioId || '', $json.currentStage || '', $json.commercialStatus || '', $json.awaitingField || '', $json.nextStep || '', JSON.stringify($json.profile || {}), $json.profile?.qualificationLevel || '', String($json.profile?.qualificationScore || 0), $json.profile?.assignedSeller || '', String(Boolean($json.noEnviar)) ] }}"),
-  ifNode('Should Notify Seller?', 'should_notify_seller_inmobiliario', [3320, 80], '={{Boolean($json.shouldNotifySeller)}}'),
+  ifNode('Should Notify Seller?', 'should_notify_seller_inmobiliario', [3320, 80], "={{Boolean($('Apply Business Rules').first().json.shouldNotifySeller)}}"),
   codeNode('Send WhatsApp to Seller', 'send_whatsapp_to_seller_inmobiliario', [3540, -20], sendSellerCode),
   postgresNode('Record Handoff Event', 'record_handoff_event_inmobiliario', [3760, -20], recordHandoffQuery, "={{ [ $json.sellerHandoffPayload?.envioId || '', $json.sellerHandoffPayload?.conversationKey || '', $json.sellerHandoffPayload?.sellerName || '', $json.sellerHandoffPayload?.sellerPhone || '', $json.sellerNotifyStatus || '', $json.sellerNotifyProviderMessageId || '', JSON.stringify($json.sellerHandoffPayload?.handoffPayload || {}), $json.sellerNotifyError || '', String($execution.id) ] }}"),
-  ifNode('Should Send Reply?', 'should_send_reply_inmobiliario', [3980, 180], '={{Boolean($json.shouldSendReply && (!($json.shouldNotifySeller) || $json.sellerNotifyStatus === "sent"))}}'),
+  ifNode('Should Send Reply?', 'should_send_reply_inmobiliario', [3980, 180], "={{(() => { const base = $('Apply Business Rules').first().json; let sellerStatus = ''; try { sellerStatus = String($('Send WhatsApp to Seller').first().json.sellerNotifyStatus || ''); } catch {} return Boolean(base.shouldSendReply && (!base.shouldNotifySeller || sellerStatus === 'sent')); })()}}"),
   codeNode('Send WhatsApp Reply', 'send_whatsapp_reply_inmobiliario', [4200, 80], sendReplyCode),
   postgresNode('Insertar respuesta outbound', 'insertar_respuesta_outbound_inmobiliario', [4420, 80], insertReplyQuery, "={{ [ $json.envioId || '', $json.replySentAt || '', $json.phone || '', $json.reply_text || '', $json.replyProviderMessageId || '', $json.phoneNumberId || '', '', JSON.stringify({ source: 'agent_reply', response: $json.replyApiResponse || {}, status: $json.replySendStatus || '', error: $json.replyError || '' }) ] }}"),
 ];
