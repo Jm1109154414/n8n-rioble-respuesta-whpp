@@ -432,6 +432,7 @@ return {
         service_area: 'Jalisco, principalmente Guadalajara metropolitana y Puerto Vallarta',
         default_seller_name: $env.DEFAULT_SELLER_NAME || 'Dueño Rioble',
         seller_notify_phone: $env.SELLER_NOTIFY_PHONE || $env.DEFAULT_SELLER_PHONE || '+5213316994400',
+        seller_notify_phones: $env.SELLER_NOTIFY_PHONES || $env.SELLER_NOTIFY_PHONE || $env.DEFAULT_SELLER_PHONE || '+5213316994400',
         current_stage: stage.currentStage,
         next_step: stage.nextStep,
         source_account: 'WhatsApp Inmobiliaria',
@@ -708,6 +709,7 @@ return {
       conversationKey,
       sellerName: profile.assignedSeller || 'Dueño Rioble',
       sellerPhone: profile.assignedSellerPhone || '+5213316994400',
+      sellerPhones: $env.SELLER_NOTIFY_PHONES || profile.assignedSellerPhone || '+5213316994400',
       summary: sellerMessage,
       handoffPayload: { profile, qualification: { level: profile.qualificationLevel, score: profile.qualificationScore, reasons: profile.qualificationReasons }, nextBestAction: suggestedNext, source_message_id: inbound.message_id || '' }
     },
@@ -817,14 +819,92 @@ on conflict (message_id) where message_id is not null
 do nothing
 returning conversation_pk, id, timestamp, direccion, message_id;`;
 
-const sendSellerCode = sendReplyCode
-  .replace('const to = normalizeWhatsappPhone(input.phone);', "const to = normalizeWhatsappPhone(input.sellerHandoffPayload?.sellerPhone || $env.SELLER_NOTIFY_PHONE || $env.DEFAULT_SELLER_PHONE || '+5213316994400');")
-  .replace("const body = String(input.reply_text || '').slice(0, 4096);", "const body = String(input.sellerHandoffPayload?.summary || '').slice(0, 4096);")
-  .replace(/replySendStatus/g, 'sellerNotifyStatus')
-  .replace(/replyProviderMessageId/g, 'sellerNotifyProviderMessageId')
-  .replace(/replySentAt/g, 'sellerNotifySentAt')
-  .replace(/replyApiResponse/g, 'sellerNotifyApiResponse')
-  .replace(/replyError/g, 'sellerNotifyError');
+const sendSellerCode = `let input = $json;
+try {
+  const base = $('Apply Business Rules').first().json;
+  if (base && (base.reply_text || base.sellerHandoffPayload) && !($json.reply_text || $json.sellerHandoffPayload)) {
+    input = base;
+  }
+} catch {}
+const apiVersion = String($env.META_GRAPH_VERSION || 'v25.0').trim();
+const phoneNumberId = String(input.phoneNumberId || $env.META_PHONE_NUMBER_ID || $env.META_WHATSAPP_PHONE_NUMBER_ID || '').trim();
+const token = String($env.META_WA_TOKEN || $env.META_WHATSAPP_TOKEN || '').trim();
+if (!phoneNumberId || !token) throw new Error('Faltan META_PHONE_NUMBER_ID o META_WA_TOKEN');
+
+function normalizeWhatsappPhone(value) {
+  let phone = String(value || '').replace(/[^\\d+]/g, '');
+  if (phone.startsWith('+')) phone = phone.slice(1);
+  if (phone.startsWith('00')) phone = phone.slice(2);
+  if (phone.startsWith('011')) phone = phone.slice(3);
+  phone = phone.replace(/\\D/g, '');
+  if (phone.length === 10) phone = '52' + phone;
+  if (phone.startsWith('521') && phone.length === 13) phone = '52' + phone.slice(3);
+  if (!/^\\d{8,15}$/.test(phone)) throw new Error('Telefono invalido para WhatsApp Cloud API: ' + value);
+  return phone;
+}
+
+function sellerPhonesFrom(value) {
+  const values = Array.isArray(value) ? value : String(value || '').split(',');
+  const phones = [];
+  const seen = new Set();
+  for (const candidate of values) {
+    const raw = String(candidate || '').trim();
+    if (!raw) continue;
+    const phone = normalizeWhatsappPhone(raw);
+    if (seen.has(phone)) continue;
+    seen.add(phone);
+    phones.push(phone);
+  }
+  return phones;
+}
+
+const sellerPhoneSource = $env.SELLER_NOTIFY_PHONES
+  || input.sellerHandoffPayload?.sellerPhones
+  || input.sellerHandoffPayload?.sellerPhone
+  || $env.SELLER_NOTIFY_PHONE
+  || $env.DEFAULT_SELLER_PHONE
+  || '+5213316994400';
+const sellerPhones = sellerPhonesFrom(sellerPhoneSource);
+if (!sellerPhones.length) throw new Error('No hay telefonos de vendedor configurados');
+
+const body = String(input.sellerHandoffPayload?.summary || '').slice(0, 4096);
+const results = [];
+for (const to of sellerPhones) {
+  const response = await this.helpers.httpRequest({
+    method: 'POST',
+    url: 'https://graph.facebook.com/' + apiVersion + '/' + phoneNumberId + '/messages',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    body: { messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'text', text: { preview_url: false, body } },
+    json: true,
+    returnFullResponse: true,
+    ignoreHttpStatusErrors: true,
+  });
+  const responseBody = typeof response.body === 'string' ? { raw: response.body } : (response.body || {});
+  const statusCode = response.statusCode || response.status;
+  const providerMessageId = String(responseBody.messages?.[0]?.id || '').trim();
+  results.push({
+    to,
+    status: statusCode >= 200 && statusCode < 300 && providerMessageId ? 'sent' : 'failed',
+    providerMessageId,
+    statusCode,
+    response: responseBody,
+    error: statusCode >= 200 && statusCode < 300 ? '' : ('HTTP ' + statusCode),
+  });
+}
+
+const sent = results.filter((result) => result.status === 'sent');
+const failed = results.filter((result) => result.status !== 'sent');
+return {
+  json: {
+    ...input,
+    sellerNotifyStatus: sent.length ? 'sent' : 'failed',
+    sellerNotifyProviderMessageId: sent.map((result) => result.providerMessageId).filter(Boolean).join(','),
+    sellerNotifySentAt: new Date().toISOString(),
+    sellerNotifyApiResponse: { results },
+    sellerNotifyError: failed.map((result) => result.to + ': ' + result.error).filter(Boolean).join(' | '),
+    sellerNotifyPhones: sellerPhones,
+  }
+};`;
 
 const recordHandoffQuery = `with inserted as (
   insert into public.seller_handoffs (
@@ -901,7 +981,7 @@ const newNodes = [
   postgresNode('Actualizar perfil envio', 'actualizar_perfil_envio', [3100, 180], updateProfileQuery, "={{ [ $json.envioId || '', $json.currentStage || '', $json.commercialStatus || '', $json.awaitingField || '', $json.nextStep || '', JSON.stringify($json.profile || {}), $json.profile?.qualificationLevel || '', String($json.profile?.qualificationScore || 0), $json.profile?.assignedSeller || '', String(Boolean($json.noEnviar)) ] }}"),
   ifNode('Should Notify Seller?', 'should_notify_seller_inmobiliario', [3320, 80], "={{Boolean($('Apply Business Rules').first().json.shouldNotifySeller)}}"),
   codeNode('Send WhatsApp to Seller', 'send_whatsapp_to_seller_inmobiliario', [3540, -20], sendSellerCode),
-  postgresNode('Record Handoff Event', 'record_handoff_event_inmobiliario', [3760, -20], recordHandoffQuery, "={{ [ $json.sellerHandoffPayload?.envioId || '', $json.sellerHandoffPayload?.conversationKey || '', $json.sellerHandoffPayload?.sellerName || '', $json.sellerHandoffPayload?.sellerPhone || '', $json.sellerNotifyStatus || '', $json.sellerNotifyProviderMessageId || '', JSON.stringify($json.sellerHandoffPayload?.handoffPayload || {}), $json.sellerNotifyError || '', String($execution.id) ] }}"),
+  postgresNode('Record Handoff Event', 'record_handoff_event_inmobiliario', [3760, -20], recordHandoffQuery, "={{ [ $json.sellerHandoffPayload?.envioId || '', $json.sellerHandoffPayload?.conversationKey || '', $json.sellerHandoffPayload?.sellerName || '', ($json.sellerNotifyPhones || [$json.sellerHandoffPayload?.sellerPhone]).filter(Boolean).join(','), $json.sellerNotifyStatus || '', $json.sellerNotifyProviderMessageId || '', JSON.stringify($json.sellerHandoffPayload?.handoffPayload || {}), $json.sellerNotifyError || '', String($execution.id) ] }}"),
   ifNode('Should Send Reply?', 'should_send_reply_inmobiliario', [3980, 180], "={{(() => { const base = $('Apply Business Rules').first().json; let sellerStatus = ''; try { sellerStatus = String($('Send WhatsApp to Seller').first().json.sellerNotifyStatus || ''); } catch {} return Boolean(base.shouldSendReply && (!base.shouldNotifySeller || sellerStatus === 'sent')); })()}}"),
   codeNode('Send WhatsApp Reply', 'send_whatsapp_reply_inmobiliario', [4200, 80], sendReplyCode),
   postgresNode('Insertar respuesta outbound', 'insertar_respuesta_outbound_inmobiliario', [4420, 80], insertReplyQuery, "={{ [ $json.envioId || '', $json.replySentAt || '', $json.phone || '', $json.reply_text || '', $json.replyProviderMessageId || '', $json.phoneNumberId || '', '', JSON.stringify({ source: 'agent_reply', response: $json.replyApiResponse || {}, status: $json.replySendStatus || '', error: $json.replyError || '' }) ] }}"),
