@@ -270,6 +270,7 @@ function firstNonEmpty(...values) {
   for (const value of values) {
     if (value === undefined || value === null) continue;
     const clean = String(value).trim();
+    if (!clean || /^(unknown|no confirmado|undefined|null)$/i.test(clean)) continue;
     if (clean) return clean;
   }
   return '';
@@ -292,6 +293,8 @@ const profile = parseJson(input.perfil_inmobiliario, {});
 const recentMessages = parseJson(input.recent_messages, []);
 const currentText = String(normalized.mensaje || inserted.mensaje || '').trim();
 const lower = currentText.toLowerCase();
+const historyText = [...recentMessages.map((message) => String(message.mensaje || '')), currentText].join('\\n');
+const lowerHistory = historyText.toLowerCase();
 
 const optOutSignal = has(lower, /\\b(no me escribas|no contactar|baja|cancelar mensajes|dejen de escribir|no quiero recibir|no molestar|stop|unsubscribe)\\b/i);
 const notInterestedSignal = has(lower, /\\b(no me interesa|ya no busco|ya compr[eé]|por ahora no|no gracias|no quiero invertir)\\b/i);
@@ -303,6 +306,10 @@ if (!optOutSignal && !notInterestedSignal) {
   else if (has(lower, /\\b(rentar|renta|arrendar|alquilar|mudanza|mensual)\\b/i)) interestTypeSignal = 'rent';
   else if (has(lower, /\\b(invertir|inversi[oó]n|plusval[ií]a|rentabilidad|patrimonio)\\b/i)) interestTypeSignal = 'invest';
   else if (has(lower, /\\b(comprar|compra|busco comprar|quiero comprar|adquirir)\\b/i)) interestTypeSignal = 'buy';
+  else if (has(lowerHistory, /\\b(vender|vendo|venta de mi|poner en venta|valuaci[oó]n|aval[uú]o|cu[aá]nto vale)\\b/i)) interestTypeSignal = 'sell';
+  else if (has(lowerHistory, /\\b(rentar|renta|arrendar|alquilar|mudanza|mensual)\\b/i)) interestTypeSignal = 'rent';
+  else if (has(lowerHistory, /\\b(invertir|inversi[oó]n|plusval[ií]a|rentabilidad|patrimonio)\\b/i)) interestTypeSignal = 'invest';
+  else if (has(lowerHistory, /\\b(comprar|compra|busco comprar|quiero comprar|adquirir)\\b/i)) interestTypeSignal = 'buy';
 }
 
 let propertyTypeSignal = '';
@@ -319,10 +326,25 @@ for (const [label, regex] of [
     break;
   }
 }
+if (!propertyTypeSignal) {
+for (const [label, regex] of [
+  ['departamento', /\\b(depa|departamento|apartamento)\\b/i],
+  ['casa', /\\b(casa|residencia)\\b/i],
+  ['terreno', /\\b(terreno|lote)\\b/i],
+  ['local', /\\b(local|comercial)\\b/i],
+  ['oficina', /\\b(oficina|corporativ)\\b/i],
+  ['bodega', /\\b(bodega|nave industrial)\\b/i],
+]) {
+  if (regex.test(lowerHistory)) {
+    propertyTypeSignal = label;
+    break;
+  }
+}
+}
 
 const zones = [];
 for (const zone of ['Zapopan', 'Guadalajara', 'Providencia', 'Andares', 'Puerta de Hierro', 'Chapalita', 'Tlaquepaque', 'Tonalá', 'Tlajomulco', 'Puerto Vallarta', 'Jalisco', 'Casa Fuerte']) {
-  if (new RegExp(zone, 'i').test(currentText)) zones.push(zone);
+  if (new RegExp(zone, 'i').test(historyText)) zones.push(zone);
 }
 
 const amountMatch = currentText.match(/(?:\\$\\s*)?(\\d+(?:[.,]\\d+)?)\\s*(mdp|millones?|millon|mil|k)?/i);
@@ -630,6 +652,7 @@ function firstNonEmpty(...values) {
   for (const value of values) {
     if (value === undefined || value === null) continue;
     const clean = String(value).trim();
+    if (!clean || /^(unknown|no confirmado|undefined|null)$/i.test(clean)) continue;
     if (clean) return clean;
   }
   return '';
@@ -720,6 +743,7 @@ let commercialStatus = decision.lead_status || input.derivedStage?.status || 'en
 let awaitingField = decision.awaitingField || input.derivedStage?.awaitingField || '';
 let nextStep = decision.nextStep || input.derivedStage?.nextStep || 'Continuar conversación';
 const requestedHandoff = Boolean(decision.should_escalate || decision.handoff_ready || currentStage === 'ready_for_handoff');
+let blockedEarlyHandoff = false;
 
 if (doNotContact) {
   currentStage = 'do_not_contact';
@@ -742,6 +766,7 @@ if (doNotContact) {
   awaitingField = 'none';
   nextStep = 'Responder y sumar contexto; no duplicar handoff del mismo objetivo';
 } else if (requestedHandoff && !routeComplete) {
+  blockedEarlyHandoff = true;
   currentStage = input.derivedStage?.currentStage || 'new_reply';
   commercialStatus = input.derivedStage?.status || 'perfil_incompleto';
   awaitingField = input.derivedStage?.awaitingField || awaitingField || 'none';
@@ -753,7 +778,41 @@ const defaultHandoffReply = profile.interestType === 'sell'
   : profile.interestType === 'buy' || profile.interestType === 'invest'
     ? 'Perfecto, con eso ya puedo ubicar mejor opciones. Te conecto con un compañero especialista para que te comparta propiedades que encajen contigo.'
     : 'Perfecto, ya tengo lo importante. Te conecto con un compañero especialista para que te comparta el siguiente paso.';
-const replyText = String(decision.reply_text || '').trim() || (currentStage === 'ready_for_handoff' ? defaultHandoffReply : '');
+function nextQuestionFor(field, stage, currentProfile = {}) {
+  if (stage === 'qualify_seller') {
+    if (field === 'propertyType') return 'Va. ¿Qué tipo de propiedad quieres vender?';
+    if (field === 'sellerPropertyAddress') return '¿En qué zona está la propiedad?';
+    if (field === 'sellerAskingPrice') return '¿Ya tienes un precio esperado o buscas que la valuemos?';
+    if (field === 'timeline') return '¿En qué plazo te gustaría venderla?';
+    if (field === 'bedrooms') return 'Para pasarle buen contexto al especialista, ¿cuántas recámaras tiene?';
+    if (field === 'bathrooms') return '¿Y cuántos baños tiene?';
+    if (field === 'parkingSpaces') return '¿Tiene cochera o cajones de estacionamiento?';
+    if (field === 'propertySize') return '¿Tienes a la mano los metros de terreno o construcción?';
+  }
+  if (stage === 'qualify_buyer') {
+    if (field === 'propertyType') return '¿Qué tipo de propiedad estás buscando?';
+    if (field === 'zones') return '¿En qué zona de Jalisco te gustaría buscar?';
+    if (field === 'budgetMax') return '¿Qué presupuesto aproximado traes contemplado?';
+    if (field === 'paymentMethod') return '¿Lo verías con crédito, contado o mixto?';
+    if (field === 'timeline') return '¿En qué plazo te gustaría comprar?';
+    if (field === 'bedrooms') return '¿Cuántas recámaras necesitas?';
+  }
+  if (stage === 'qualify_renter') {
+    if (field === 'propertyType') return '¿Qué tipo de propiedad quieres rentar?';
+    if (field === 'zones') return '¿En qué zona te gustaría rentar?';
+    if (field === 'rentBudget') return '¿Qué presupuesto mensual tienes contemplado?';
+    if (field === 'moveInDate') return '¿Para cuándo te gustaría moverte?';
+  }
+  if (stage === 'qualify_investor') {
+    if (field === 'budgetMax') return '¿Qué presupuesto aproximado tienes pensado invertir?';
+    if (field === 'timeline') return '¿En qué plazo te gustaría mover esa inversión?';
+    if (field === 'investmentPreference') return '¿Buscas más renta, plusvalía o patrimonio familiar?';
+  }
+  if (!currentProfile.interestType || currentProfile.interestType === 'unknown') return 'Para ubicarte bien, ¿estás buscando comprar, vender, rentar o invertir?';
+  return 'Para perfilarlo bien antes de pasarlo, ¿qué dato crees que es clave que sepa el especialista?';
+}
+const ruleReplyText = blockedEarlyHandoff ? nextQuestionFor(awaitingField, currentStage, profile) : '';
+const replyText = ruleReplyText || String(decision.reply_text || '').trim() || (currentStage === 'ready_for_handoff' ? defaultHandoffReply : '');
 const canReplyWithoutHandoff = Boolean(replyText && !doNotContact);
 const budget = profile.interestType === 'rent' ? profile.rentBudget : (profile.budgetMax || profile.sellerAskingPrice);
 const profileSummary = profile.summary || [
