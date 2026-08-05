@@ -729,9 +729,12 @@ function missing(value) {
 const qualification = decision.qualification || input.qualification || { level: 'nurture', score: 0, reasons: [] };
 const existingRoutes = baseProfile.routes && typeof baseProfile.routes === 'object' ? baseProfile.routes : {};
 const activeIntentCandidate = firstNonEmpty(collected.interestType, baseProfile.currentIntent, baseProfile.activeRoute, baseProfile.interestType, 'unknown');
+const previousIntent = firstNonEmpty(baseProfile.currentIntent, baseProfile.activeRoute, baseProfile.interestType, 'unknown');
+const explicitIntentChange = Boolean(collected.interestType && previousIntent !== 'unknown' && collected.interestType !== previousIntent);
 const routeState = activeIntentCandidate && activeIntentCandidate !== 'unknown' && existingRoutes[activeIntentCandidate] && typeof existingRoutes[activeIntentCandidate] === 'object'
   ? existingRoutes[activeIntentCandidate]
   : {};
+const inheritedProfile = explicitIntentChange && Object.keys(routeState).length === 0 ? {} : baseProfile;
 const profile = {
   ...baseProfile,
   fullName: firstNonEmpty(collected.fullName, baseProfile.fullName, envio.nombre, inbound.nombre_perfil),
@@ -740,26 +743,26 @@ const profile = {
   activeRoute: activeIntentCandidate,
   routes: existingRoutes,
   interestType: activeIntentCandidate,
-  propertyType: firstNonEmpty(collected.propertyType, baseProfile.propertyType, routeState.propertyType),
-  zones: Array.from(new Set([...asArray(routeState.zones), ...asArray(baseProfile.zones), ...asArray(collected.zones)])),
-  budgetMin: firstNonEmpty(collected.budgetMin, baseProfile.budgetMin, routeState.budgetMin),
-  budgetMax: firstNonEmpty(collected.budgetMax, baseProfile.budgetMax, routeState.budgetMax),
-  rentBudget: firstNonEmpty(collected.rentBudget, baseProfile.rentBudget, routeState.rentBudget),
-  timeline: firstNonEmpty(collected.timeline, baseProfile.timeline, routeState.timeline),
-  paymentMethod: firstNonEmpty(collected.paymentMethod, baseProfile.paymentMethod, routeState.paymentMethod),
-  financingStatus: firstNonEmpty(collected.financingStatus, baseProfile.financingStatus, routeState.financingStatus),
-  bedrooms: firstNonEmpty(collected.bedrooms, baseProfile.bedrooms, routeState.bedrooms),
-  bathrooms: firstNonEmpty(collected.bathrooms, baseProfile.bathrooms, routeState.bathrooms),
-  parkingSpaces: firstNonEmpty(collected.parkingSpaces, baseProfile.parkingSpaces, routeState.parkingSpaces),
-  sellerPropertyAddress: firstNonEmpty(collected.sellerPropertyAddress, baseProfile.sellerPropertyAddress, routeState.sellerPropertyAddress),
-  sellerAskingPrice: firstNonEmpty(collected.sellerAskingPrice, baseProfile.sellerAskingPrice, routeState.sellerAskingPrice),
-  sellerPropertyCondition: firstNonEmpty(collected.sellerPropertyCondition, baseProfile.sellerPropertyCondition, routeState.sellerPropertyCondition),
-  sellerPropertySize: firstNonEmpty(collected.sellerPropertySize, baseProfile.sellerPropertySize, routeState.sellerPropertySize),
-  landSize: firstNonEmpty(collected.landSize, baseProfile.landSize, routeState.landSize),
-  constructionSize: firstNonEmpty(collected.constructionSize, baseProfile.constructionSize, routeState.constructionSize),
-  sellerOwnership: firstNonEmpty(collected.sellerOwnership, baseProfile.sellerOwnership, routeState.sellerOwnership),
-  investmentObjective: firstNonEmpty(collected.investmentObjective, baseProfile.investmentObjective, routeState.investmentObjective),
-  riskProfile: firstNonEmpty(collected.riskProfile, baseProfile.riskProfile, routeState.riskProfile),
+  propertyType: firstNonEmpty(collected.propertyType, routeState.propertyType, inheritedProfile.propertyType),
+  zones: Array.from(new Set([...asArray(routeState.zones), ...asArray(inheritedProfile.zones), ...asArray(collected.zones)])),
+  budgetMin: firstNonEmpty(collected.budgetMin, routeState.budgetMin, inheritedProfile.budgetMin),
+  budgetMax: firstNonEmpty(collected.budgetMax, routeState.budgetMax, inheritedProfile.budgetMax),
+  rentBudget: firstNonEmpty(collected.rentBudget, routeState.rentBudget, inheritedProfile.rentBudget),
+  timeline: firstNonEmpty(collected.timeline, routeState.timeline, inheritedProfile.timeline),
+  paymentMethod: firstNonEmpty(collected.paymentMethod, routeState.paymentMethod, inheritedProfile.paymentMethod),
+  financingStatus: firstNonEmpty(collected.financingStatus, routeState.financingStatus, inheritedProfile.financingStatus),
+  bedrooms: firstNonEmpty(collected.bedrooms, routeState.bedrooms, inheritedProfile.bedrooms),
+  bathrooms: firstNonEmpty(collected.bathrooms, routeState.bathrooms, inheritedProfile.bathrooms),
+  parkingSpaces: firstNonEmpty(collected.parkingSpaces, routeState.parkingSpaces, inheritedProfile.parkingSpaces),
+  sellerPropertyAddress: firstNonEmpty(collected.sellerPropertyAddress, routeState.sellerPropertyAddress, inheritedProfile.sellerPropertyAddress),
+  sellerAskingPrice: firstNonEmpty(collected.sellerAskingPrice, routeState.sellerAskingPrice, inheritedProfile.sellerAskingPrice),
+  sellerPropertyCondition: firstNonEmpty(collected.sellerPropertyCondition, routeState.sellerPropertyCondition, inheritedProfile.sellerPropertyCondition),
+  sellerPropertySize: firstNonEmpty(collected.sellerPropertySize, routeState.sellerPropertySize, inheritedProfile.sellerPropertySize),
+  landSize: firstNonEmpty(collected.landSize, routeState.landSize, inheritedProfile.landSize),
+  constructionSize: firstNonEmpty(collected.constructionSize, routeState.constructionSize, inheritedProfile.constructionSize),
+  sellerOwnership: firstNonEmpty(collected.sellerOwnership, routeState.sellerOwnership, inheritedProfile.sellerOwnership),
+  investmentObjective: firstNonEmpty(collected.investmentObjective, routeState.investmentObjective, inheritedProfile.investmentObjective),
+  riskProfile: firstNonEmpty(collected.riskProfile, routeState.riskProfile, inheritedProfile.riskProfile),
   objectiveHandoffs: baseProfile.objectiveHandoffs && typeof baseProfile.objectiveHandoffs === 'object' ? baseProfile.objectiveHandoffs : {},
   summary: firstNonEmpty(collected.summary, baseProfile.summary),
   nextBestAction: firstNonEmpty(collected.nextBestAction, baseProfile.nextBestAction, decision.nextStep),
@@ -847,6 +850,48 @@ let nextStep = decision.nextStep || input.derivedStage?.nextStep || 'Continuar c
 const requestedHandoff = Boolean(decision.should_escalate || decision.handoff_ready || currentStage === 'ready_for_handoff');
 let blockedEarlyHandoff = false;
 
+function stageForProfile(currentProfile) {
+  if (!currentProfile.interestType || currentProfile.interestType === 'unknown') {
+    return { currentStage: 'new_reply', status: 'nuevo', nextStep: 'Detectar interés real', awaitingField: 'interestType' };
+  }
+  const isResidential = ['casa', 'departamento'].includes(currentProfile.propertyType);
+  const hasMeasures = Boolean(currentProfile.landSize || currentProfile.constructionSize || currentProfile.sellerPropertySize);
+  const valuationRequested = /valuaci[oó]n|aval[uú]o/i.test(String(currentProfile.sellerAskingPrice || decision.reply_text || inbound.mensaje || ''));
+  if (currentProfile.interestType === 'buy') {
+    return { currentStage: 'qualify_buyer', status: 'perfil_incompleto', nextStep: 'Pedir dato clave de compra', awaitingField: !currentProfile.propertyType ? 'propertyType' : !currentProfile.zones.length ? 'zones' : !currentProfile.budgetMax ? 'budgetMax' : !currentProfile.paymentMethod ? 'paymentMethod' : !currentProfile.timeline ? 'timeline' : isResidential && !currentProfile.bedrooms ? 'bedrooms' : 'none' };
+  }
+  if (currentProfile.interestType === 'sell') {
+    return { currentStage: 'qualify_seller', status: 'perfil_incompleto', nextStep: 'Pedir dato clave de venta', awaitingField: !currentProfile.propertyType ? 'propertyType' : !(currentProfile.sellerPropertyAddress || currentProfile.zones.length) ? 'sellerPropertyAddress' : !(currentProfile.sellerAskingPrice || valuationRequested) ? 'sellerAskingPrice' : !currentProfile.timeline ? 'timeline' : isResidential && !currentProfile.bedrooms ? 'bedrooms' : isResidential && !currentProfile.bathrooms ? 'bathrooms' : isResidential && !currentProfile.parkingSpaces ? 'parkingSpaces' : !hasMeasures ? 'propertySize' : !currentProfile.sellerPropertyCondition ? 'sellerPropertyCondition' : !currentProfile.sellerOwnership ? 'sellerOwnership' : 'none' };
+  }
+  if (currentProfile.interestType === 'rent') {
+    return { currentStage: 'qualify_renter', status: 'perfil_incompleto', nextStep: 'Pedir dato clave de renta', awaitingField: !currentProfile.propertyType ? 'propertyType' : !currentProfile.zones.length ? 'zones' : !currentProfile.rentBudget ? 'rentBudget' : !currentProfile.timeline ? 'moveInDate' : 'none' };
+  }
+  if (currentProfile.interestType === 'invest') {
+    return { currentStage: 'qualify_investor', status: 'perfil_incompleto', nextStep: 'Pedir objetivo de inversión o presupuesto', awaitingField: !currentProfile.budgetMax ? 'budgetMax' : !currentProfile.investmentObjective ? 'investmentObjective' : !currentProfile.timeline ? 'timeline' : !(currentProfile.zones.length || currentProfile.propertyType) ? 'investmentPreference' : !currentProfile.riskProfile ? 'riskProfile' : 'none' };
+  }
+  return { currentStage: 'nurture', status: 'nutricion', nextStep: 'Guardar contexto sin presión', awaitingField: 'none' };
+}
+function stageIntent(stage) {
+  if (stage === 'qualify_buyer') return 'buy';
+  if (stage === 'qualify_seller') return 'sell';
+  if (stage === 'qualify_renter') return 'rent';
+  if (stage === 'qualify_investor') return 'invest';
+  return '';
+}
+const profileStage = stageForProfile(profile);
+const decisionStageIntent = stageIntent(currentStage);
+if (decisionStageIntent && profile.interestType && profile.interestType !== 'unknown' && decisionStageIntent !== profile.interestType) {
+  currentStage = profileStage.currentStage;
+  commercialStatus = profileStage.status;
+  awaitingField = profileStage.awaitingField;
+  nextStep = profileStage.nextStep;
+} else if (!decision.currentStage && !decision.awaitingField) {
+  currentStage = profileStage.currentStage;
+  commercialStatus = profileStage.status;
+  awaitingField = profileStage.awaitingField;
+  nextStep = profileStage.nextStep;
+}
+
 if (doNotContact) {
   currentStage = 'do_not_contact';
   commercialStatus = 'no_contactar';
@@ -869,10 +914,10 @@ if (doNotContact) {
   nextStep = 'Responder y sumar contexto; no duplicar handoff del mismo objetivo';
 } else if (requestedHandoff && !routeComplete) {
   blockedEarlyHandoff = true;
-  currentStage = input.derivedStage?.currentStage || 'new_reply';
-  commercialStatus = input.derivedStage?.status || 'perfil_incompleto';
-  awaitingField = input.derivedStage?.awaitingField || awaitingField || 'none';
-  nextStep = input.derivedStage?.nextStep || 'Completar perfil antes de avisar al vendedor';
+  currentStage = profileStage.currentStage;
+  commercialStatus = profileStage.status || 'perfil_incompleto';
+  awaitingField = profileStage.awaitingField || awaitingField || 'none';
+  nextStep = profileStage.nextStep || 'Completar perfil antes de avisar al vendedor';
 }
 
 const defaultHandoffReply = profile.interestType === 'sell'
