@@ -343,6 +343,12 @@ if (has(lower, /\\b(contado|cash)\\b/i)) paymentMethodSignal = 'contado';
 else if (has(lower, /\\b(cr[eé]dito|hipotecario|infonavit|banco|preaprobado|pre aprobado)\\b/i)) paymentMethodSignal = 'credito';
 else if (has(lower, /\\b(mixto)\\b/i)) paymentMethodSignal = 'mixto';
 
+const bathroomSignal = (currentText.match(/\\b(\\d+(?:[.,]\\d+)?)\\s*(?:bañ(?:o|os)|bano|banos)\\b/i) || [])[1] || '';
+const parkingSignal = (currentText.match(/\\b(\\d+)\\s*(?:cajones?|estacionamientos?|cocheras?)\\b/i) || [])[1] || '';
+const landSizeSignal = (currentText.match(/\\b(\\d+(?:[.,]\\d+)?)\\s*(?:m2|m²|metros?)\\s*(?:de\\s*)?(?:terreno|lote)\\b/i) || [])[1] || '';
+const constructionSizeSignal = (currentText.match(/\\b(\\d+(?:[.,]\\d+)?)\\s*(?:m2|m²|metros?)\\s*(?:de\\s*)?(?:construcci[oó]n|construidos?)\\b/i) || [])[1] || '';
+const ownerSignal = has(lower, /\\b(soy (?:el |la )?(?:dueñ[oa]|propietari[oa])|es m[ií]a|a mi nombre)\\b/i) ? 'propietario' : '';
+
 const currentProfile = {
   fullName: firstNonEmpty(profile.fullName, input.nombre, normalized.nombre_perfil),
   phone: firstNonEmpty(profile.phone, input.telefono_digits, normalized.telefono),
@@ -357,11 +363,17 @@ const currentProfile = {
   paymentMethod: firstNonEmpty(paymentMethodSignal, profile.paymentMethod),
   financingStatus: firstNonEmpty(profile.financingStatus, /preaprobado|pre aprobado/i.test(currentText) ? 'preaprobado' : ''),
   bedrooms: firstNonEmpty(profile.bedrooms, (currentText.match(/\\b(\\d+)\\s*(?:rec[aá]maras?|habitaciones?)\\b/i) || [])[1]),
+  bathrooms: firstNonEmpty(profile.bathrooms, bathroomSignal),
+  parkingSpaces: firstNonEmpty(profile.parkingSpaces, parkingSignal),
   mustHaves: asArray(profile.mustHaves),
   sellerPropertyAddress: firstNonEmpty(profile.sellerPropertyAddress),
   sellerAskingPrice: firstNonEmpty(profile.sellerAskingPrice),
   sellerPropertyCondition: firstNonEmpty(profile.sellerPropertyCondition),
   sellerPropertySize: firstNonEmpty(profile.sellerPropertySize),
+  landSize: firstNonEmpty(profile.landSize, landSizeSignal),
+  constructionSize: firstNonEmpty(profile.constructionSize, constructionSizeSignal),
+  sellerOwnership: firstNonEmpty(profile.sellerOwnership, ownerSignal),
+  objectiveHandoffs: profile.objectiveHandoffs && typeof profile.objectiveHandoffs === 'object' ? profile.objectiveHandoffs : {},
   urgency: firstNonEmpty(profile.urgency, timelineSignal === 'inmediato' ? 'alta' : ''),
   summary: firstNonEmpty(profile.summary),
   nextBestAction: firstNonEmpty(profile.nextBestAction),
@@ -370,12 +382,43 @@ const currentProfile = {
 };
 if (currentProfile.interestType === 'sell' && amountText) currentProfile.sellerAskingPrice = firstNonEmpty(amountText, profile.sellerAskingPrice);
 
-const buyerComplete = ['buy', 'invest'].includes(currentProfile.interestType) && currentProfile.zones.length && currentProfile.propertyType && currentProfile.budgetMax;
-const renterComplete = currentProfile.interestType === 'rent' && currentProfile.zones.length && currentProfile.propertyType && currentProfile.rentBudget;
-const sellerComplete = currentProfile.interestType === 'sell' && (currentProfile.sellerPropertyAddress || currentProfile.zones.length) && currentProfile.propertyType && (currentProfile.sellerAskingPrice || /valuaci[oó]n|aval[uú]o/i.test(lower));
+const residentialType = ['casa', 'departamento'].includes(currentProfile.propertyType);
+const hasResidentialBasics = !residentialType || Boolean(currentProfile.bedrooms && currentProfile.bathrooms && currentProfile.parkingSpaces);
+const hasPropertyMeasures = Boolean(currentProfile.landSize || currentProfile.constructionSize || currentProfile.sellerPropertySize);
+const wantsValuation = /valuaci[oó]n|aval[uú]o/i.test(lower) || /valuaci[oó]n|aval[uú]o/i.test(String(currentProfile.sellerAskingPrice || ''));
+const objectiveKey = [
+  currentProfile.interestType || 'unknown',
+  currentProfile.propertyType || 'unknown',
+  currentProfile.zones?.[0] || currentProfile.sellerPropertyAddress || 'sin-zona'
+].join(':').toLowerCase().replace(/[^a-z0-9:.-]+/g, '-');
+const objectiveAlreadyHandoff = Boolean(currentProfile.objectiveHandoffs?.[objectiveKey]);
+
+const buyerComplete = currentProfile.interestType === 'buy'
+  && currentProfile.zones.length
+  && currentProfile.propertyType
+  && currentProfile.budgetMax
+  && currentProfile.paymentMethod
+  && currentProfile.timeline
+  && (!residentialType || currentProfile.bedrooms);
+const investorComplete = currentProfile.interestType === 'invest'
+  && currentProfile.budgetMax
+  && currentProfile.timeline
+  && (currentProfile.zones.length || currentProfile.propertyType);
+const renterComplete = currentProfile.interestType === 'rent'
+  && currentProfile.zones.length
+  && currentProfile.propertyType
+  && currentProfile.rentBudget
+  && currentProfile.timeline;
+const sellerComplete = currentProfile.interestType === 'sell'
+  && (currentProfile.sellerPropertyAddress || currentProfile.zones.length)
+  && currentProfile.propertyType
+  && (currentProfile.sellerAskingPrice || wantsValuation)
+  && currentProfile.timeline
+  && hasResidentialBasics
+  && (hasPropertyMeasures || residentialType);
 const fastTimeline = ['inmediato', '1-3_meses'].includes(currentProfile.timeline);
 const strongPayment = ['contado', 'credito'].includes(currentProfile.paymentMethod) || currentProfile.financingStatus === 'preaprobado';
-const handoffReady = Boolean(!optOutSignal && !notInterestedSignal && (buyerComplete || sellerComplete || renterComplete || handoffSignal || fastTimeline || strongPayment));
+const handoffReady = Boolean(!optOutSignal && !notInterestedSignal && !objectiveAlreadyHandoff && (buyerComplete || investorComplete || sellerComplete || renterComplete));
 
 let qualification = { level: input.qualification_level || 'nurture', score: Number(input.qualification_score || 0), reasons: [] };
 if (optOutSignal) qualification = { level: 'do_not_contact', score: 0, reasons: ['pidió no contacto'] };
@@ -383,17 +426,15 @@ else if (handoffReady) qualification = { level: 'hot', score: Math.max(80, quali
 else if (currentProfile.interestType !== 'unknown') qualification = { level: 'warm', score: Math.max(40, qualification.score), reasons: ['interés real con datos pendientes'] };
 
 function deriveStage() {
-  if (String(input.etapa_conversacion || '') === 'handoff_sent' || String(input.estatus_comercial || '') === 'seguimiento_humano') {
-    return { currentStage: 'handoff_sent', status: 'asignado_a_vendedor', nextStep: 'Evitar recalificar; seguimiento humano', awaitingField: 'none' };
-  }
   if (optOutSignal || input.no_enviar === true) return { currentStage: 'do_not_contact', status: 'no_contactar', nextStep: 'No insistir', awaitingField: 'none' };
   if (notInterestedSignal) return { currentStage: 'not_interested', status: 'no_interesado', nextStep: 'Cerrar suave sin insistir', awaitingField: 'none' };
+  if (objectiveAlreadyHandoff && !interestTypeSignal) return { currentStage: 'post_handoff_followup', status: 'seguimiento_humano', nextStep: 'Responder breve y mandar actualización al vendedor si aporta datos nuevos', awaitingField: 'none' };
   if (handoffReady) return { currentStage: 'ready_for_handoff', status: 'prospecto_caliente', nextStep: 'Notificar vendedor con resumen', awaitingField: 'none' };
   if (!currentProfile.interestType || currentProfile.interestType === 'unknown') return { currentStage: input.etapa_conversacion || 'new_reply', status: 'nuevo', nextStep: 'Detectar interés real', awaitingField: 'interestType' };
-  if (currentProfile.interestType === 'buy') return { currentStage: 'qualify_buyer', status: 'perfil_incompleto', nextStep: 'Pedir dato clave de compra', awaitingField: !currentProfile.zones.length ? 'zones' : !currentProfile.propertyType ? 'propertyType' : !currentProfile.budgetMax ? 'budgetMax' : 'timeline' };
-  if (currentProfile.interestType === 'sell') return { currentStage: 'qualify_seller', status: 'perfil_incompleto', nextStep: 'Pedir dato clave de venta', awaitingField: !(currentProfile.sellerPropertyAddress || currentProfile.zones.length) ? 'sellerPropertyAddress' : !currentProfile.propertyType ? 'propertyType' : !currentProfile.sellerAskingPrice ? 'sellerAskingPrice' : 'timeline' };
-  if (currentProfile.interestType === 'rent') return { currentStage: 'qualify_renter', status: 'perfil_incompleto', nextStep: 'Pedir dato clave de renta', awaitingField: !currentProfile.zones.length ? 'zones' : !currentProfile.propertyType ? 'propertyType' : !currentProfile.rentBudget ? 'rentBudget' : 'moveInDate' };
-  if (currentProfile.interestType === 'invest') return { currentStage: 'qualify_investor', status: 'perfil_incompleto', nextStep: 'Pedir objetivo de inversión o presupuesto', awaitingField: !currentProfile.zones.length ? 'zones' : !currentProfile.budgetMax ? 'budgetMax' : 'timeline' };
+  if (currentProfile.interestType === 'buy') return { currentStage: 'qualify_buyer', status: 'perfil_incompleto', nextStep: 'Pedir dato clave de compra', awaitingField: !currentProfile.propertyType ? 'propertyType' : !currentProfile.zones.length ? 'zones' : !currentProfile.budgetMax ? 'budgetMax' : !currentProfile.paymentMethod ? 'paymentMethod' : !currentProfile.timeline ? 'timeline' : residentialType && !currentProfile.bedrooms ? 'bedrooms' : 'none' };
+  if (currentProfile.interestType === 'sell') return { currentStage: 'qualify_seller', status: 'perfil_incompleto', nextStep: 'Pedir dato clave de venta', awaitingField: !currentProfile.propertyType ? 'propertyType' : !(currentProfile.sellerPropertyAddress || currentProfile.zones.length) ? 'sellerPropertyAddress' : !(currentProfile.sellerAskingPrice || wantsValuation) ? 'sellerAskingPrice' : !currentProfile.timeline ? 'timeline' : residentialType && !currentProfile.bedrooms ? 'bedrooms' : residentialType && !currentProfile.bathrooms ? 'bathrooms' : residentialType && !currentProfile.parkingSpaces ? 'parkingSpaces' : !hasPropertyMeasures && !residentialType ? 'propertySize' : 'none' };
+  if (currentProfile.interestType === 'rent') return { currentStage: 'qualify_renter', status: 'perfil_incompleto', nextStep: 'Pedir dato clave de renta', awaitingField: !currentProfile.propertyType ? 'propertyType' : !currentProfile.zones.length ? 'zones' : !currentProfile.rentBudget ? 'rentBudget' : !currentProfile.timeline ? 'moveInDate' : 'none' };
+  if (currentProfile.interestType === 'invest') return { currentStage: 'qualify_investor', status: 'perfil_incompleto', nextStep: 'Pedir objetivo de inversión o presupuesto', awaitingField: !currentProfile.budgetMax ? 'budgetMax' : !currentProfile.timeline ? 'timeline' : !(currentProfile.zones.length || currentProfile.propertyType) ? 'investmentPreference' : 'none' };
   return { currentStage: 'nurture', status: 'nutricion', nextStep: 'Guardar contexto sin presión', awaitingField: 'none' };
 }
 
@@ -449,23 +490,42 @@ const base = $('Build Conversation Context').first().json;
 const stage = base.derivedStage?.currentStage || 'new_reply';
 
 function fallbackReply(currentStage, profile = {}) {
+  const awaiting = String(base.derivedStage?.awaitingField || '').trim();
   if (currentStage === 'do_not_contact') return 'Claro, entiendo. Ya no te escribo por este medio.';
   if (currentStage === 'not_interested') return 'Claro, entiendo perfecto.\\n\\nDe cualquier forma, aprovecho para comentarte que en Rioble Inmobiliaria también podemos ayudarte si en algún momento quieres vender alguna propiedad.\\n\\nTenemos clientes buscando oportunidades en diferentes zonas y podríamos ayudarte a revisar si tu propiedad encaja con alguno de ellos.\\n\\n¿Actualmente tienes alguna propiedad que estés considerando vender?';
+  if (currentStage === 'post_handoff_followup') return 'Va, gracias por el dato. Se lo sumo al contexto para que mi compañero no te haga repetirlo.';
   if (currentStage === 'new_reply' || currentStage === 'detect_interest') return 'Claro. Para ubicarte bien, ¿estás buscando comprar, vender, rentar o invertir?';
   if (currentStage === 'qualify_buyer') {
-    if (!profile.zones?.length) return 'Va. ¿En qué zona de Jalisco te gustaría buscar?';
-    if (!profile.propertyType) return 'Perfecto. ¿Qué tipo de propiedad tienes en mente?';
-    if (!profile.budgetMax) return 'Bien. ¿Qué presupuesto aproximado traes contemplado?';
-    return 'Va. ¿En qué plazo te gustaría comprar?';
+    if (awaiting === 'propertyType' || !profile.propertyType) return 'Perfecto. ¿Qué tipo de propiedad tienes en mente?';
+    if (awaiting === 'zones' || !profile.zones?.length) return 'Va. ¿En qué zona de Jalisco te gustaría buscar?';
+    if (awaiting === 'budgetMax' || !profile.budgetMax) return 'Bien. ¿Qué presupuesto aproximado traes contemplado?';
+    if (awaiting === 'paymentMethod' || !profile.paymentMethod) return '¿Lo estarías viendo con crédito, contado o mixto?';
+    if (awaiting === 'timeline' || !profile.timeline) return 'Va. ¿En qué plazo te gustaría comprar?';
+    if (awaiting === 'bedrooms' || !profile.bedrooms) return 'Para afinarlo bien, ¿cuántas recámaras necesitas?';
+    return 'Va. ¿Qué otra cosa sería clave para ti en esa propiedad?';
   }
   if (currentStage === 'qualify_seller') {
-    if (!(profile.sellerPropertyAddress || profile.zones?.length)) return 'Entiendo. ¿En qué zona está la propiedad que quieres vender?';
-    if (!profile.propertyType) return 'Va. ¿Qué tipo de propiedad es?';
-    if (!profile.sellerAskingPrice) return 'Perfecto. ¿Ya tienes un precio esperado o buscas que la valuemos?';
-    return '¿En qué plazo te gustaría venderla?';
+    if (awaiting === 'propertyType' || !profile.propertyType) return 'Va. ¿Qué tipo de propiedad quieres vender?';
+    if (awaiting === 'sellerPropertyAddress' || !(profile.sellerPropertyAddress || profile.zones?.length)) return 'Entiendo. ¿En qué zona está la propiedad?';
+    if (awaiting === 'sellerAskingPrice' || !profile.sellerAskingPrice) return 'Perfecto. ¿Ya tienes un precio esperado o buscas que la valuemos?';
+    if (awaiting === 'timeline' || !profile.timeline) return '¿En qué plazo te gustaría venderla?';
+    if (awaiting === 'bedrooms' || !profile.bedrooms) return 'Para pasar bien el contexto, ¿cuántas recámaras tiene?';
+    if (awaiting === 'bathrooms' || !profile.bathrooms) return '¿Y cuántos baños tiene?';
+    if (awaiting === 'parkingSpaces' || !profile.parkingSpaces) return '¿Tiene cajones de estacionamiento o cochera?';
+    if (awaiting === 'propertySize') return '¿Tienes a la mano los metros de terreno o construcción?';
+    return 'Va. ¿Hay algo importante de la propiedad que deba saber antes de pasarlo?';
   }
-  if (currentStage === 'qualify_renter') return 'Perfecto. ¿En qué zona te gustaría rentar?';
-  if (currentStage === 'qualify_investor') return 'Bien. ¿Buscas invertir para renta, plusvalía o patrimonio familiar?';
+  if (currentStage === 'qualify_renter') {
+    if (awaiting === 'propertyType' || !profile.propertyType) return 'Perfecto. ¿Qué tipo de propiedad quieres rentar?';
+    if (awaiting === 'zones' || !profile.zones?.length) return '¿En qué zona te gustaría rentar?';
+    if (awaiting === 'rentBudget' || !profile.rentBudget) return '¿Qué presupuesto mensual tienes contemplado?';
+    return '¿Para cuándo te gustaría moverte?';
+  }
+  if (currentStage === 'qualify_investor') {
+    if (awaiting === 'budgetMax' || !profile.budgetMax) return 'Bien. ¿Qué presupuesto aproximado tienes pensado invertir?';
+    if (awaiting === 'timeline' || !profile.timeline) return '¿En qué plazo te gustaría mover esa inversión?';
+    return '¿Buscas más renta, plusvalía o patrimonio familiar?';
+  }
   if (currentStage === 'ready_for_handoff') {
     if (profile.interestType === 'sell') return 'Perfecto, ya tengo los datos base. Te conecto con un compañero especialista para revisar tu propiedad y el siguiente paso.';
     if (profile.interestType === 'buy' || profile.interestType === 'invest') return 'Perfecto, con eso ya puedo ubicar mejor opciones. Te conecto con un compañero especialista para que te comparta propiedades que encajen contigo.';
@@ -599,8 +659,16 @@ const profile = {
   paymentMethod: firstNonEmpty(collected.paymentMethod, baseProfile.paymentMethod),
   financingStatus: firstNonEmpty(collected.financingStatus, baseProfile.financingStatus),
   bedrooms: firstNonEmpty(collected.bedrooms, baseProfile.bedrooms),
+  bathrooms: firstNonEmpty(collected.bathrooms, baseProfile.bathrooms),
+  parkingSpaces: firstNonEmpty(collected.parkingSpaces, baseProfile.parkingSpaces),
   sellerPropertyAddress: firstNonEmpty(collected.sellerPropertyAddress, baseProfile.sellerPropertyAddress),
   sellerAskingPrice: firstNonEmpty(collected.sellerAskingPrice, baseProfile.sellerAskingPrice),
+  sellerPropertyCondition: firstNonEmpty(collected.sellerPropertyCondition, baseProfile.sellerPropertyCondition),
+  sellerPropertySize: firstNonEmpty(collected.sellerPropertySize, baseProfile.sellerPropertySize),
+  landSize: firstNonEmpty(collected.landSize, baseProfile.landSize),
+  constructionSize: firstNonEmpty(collected.constructionSize, baseProfile.constructionSize),
+  sellerOwnership: firstNonEmpty(collected.sellerOwnership, baseProfile.sellerOwnership),
+  objectiveHandoffs: baseProfile.objectiveHandoffs && typeof baseProfile.objectiveHandoffs === 'object' ? baseProfile.objectiveHandoffs : {},
   summary: firstNonEmpty(collected.summary, baseProfile.summary),
   nextBestAction: firstNonEmpty(collected.nextBestAction, baseProfile.nextBestAction, decision.nextStep),
   assignedSeller: firstNonEmpty(decision.assigned_seller, collected.assignedSeller, baseProfile.assignedSeller, $env.DEFAULT_SELLER_NAME, 'Dueño Rioble'),
@@ -611,19 +679,49 @@ const profile = {
 };
 
 const doNotContact = Boolean(decision.do_not_contact || profile.qualificationLevel === 'do_not_contact' || decision.currentStage === 'do_not_contact');
-const alreadyHandoff = String(envio.etapa_conversacion || '') === 'handoff_sent' || ['sent', 'delivered', 'read'].includes(String(envio.handoff_status || input.sellerHandoffStatus || '').toLowerCase());
+const residentialType = ['casa', 'departamento'].includes(profile.propertyType);
+const hasResidentialBasics = !residentialType || Boolean(profile.bedrooms && profile.bathrooms && profile.parkingSpaces);
+const hasPropertyMeasures = Boolean(profile.landSize || profile.constructionSize || profile.sellerPropertySize);
+const wantsValuation = /valuaci[oó]n|aval[uú]o/i.test(String(profile.sellerAskingPrice || decision.reply_text || inbound.mensaje || ''));
+const objectiveKey = [
+  profile.interestType || 'unknown',
+  profile.propertyType || 'unknown',
+  profile.zones?.[0] || profile.sellerPropertyAddress || 'sin-zona'
+].join(':').toLowerCase().replace(/[^a-z0-9:.-]+/g, '-');
+const objectiveAlreadyHandoff = Boolean(profile.objectiveHandoffs?.[objectiveKey]);
+const routeComplete = Boolean(
+  (profile.interestType === 'buy'
+    && profile.zones.length
+    && profile.propertyType
+    && profile.budgetMax
+    && profile.paymentMethod
+    && profile.timeline
+    && (!residentialType || profile.bedrooms))
+  || (profile.interestType === 'invest'
+    && profile.budgetMax
+    && profile.timeline
+    && (profile.zones.length || profile.propertyType))
+  || (profile.interestType === 'rent'
+    && profile.zones.length
+    && profile.propertyType
+    && profile.rentBudget
+    && profile.timeline)
+  || (profile.interestType === 'sell'
+    && (profile.sellerPropertyAddress || profile.zones.length)
+    && profile.propertyType
+    && (profile.sellerAskingPrice || wantsValuation)
+    && profile.timeline
+    && hasResidentialBasics
+    && (hasPropertyMeasures || residentialType))
+);
 
 let currentStage = decision.currentStage || input.derivedStage?.currentStage || 'new_reply';
 let commercialStatus = decision.lead_status || input.derivedStage?.status || 'en_conversacion';
 let awaitingField = decision.awaitingField || input.derivedStage?.awaitingField || '';
 let nextStep = decision.nextStep || input.derivedStage?.nextStep || 'Continuar conversación';
+const requestedHandoff = Boolean(decision.should_escalate || decision.handoff_ready || currentStage === 'ready_for_handoff');
 
-if (alreadyHandoff) {
-  currentStage = 'handoff_sent';
-  commercialStatus = 'asignado_a_vendedor';
-  awaitingField = 'none';
-  nextStep = 'Seguimiento humano por vendedor';
-} else if (doNotContact) {
+if (doNotContact) {
   currentStage = 'do_not_contact';
   commercialStatus = 'no_contactar';
   awaitingField = 'none';
@@ -633,11 +731,21 @@ if (alreadyHandoff) {
   commercialStatus = 'no_interesado';
   awaitingField = 'none';
   nextStep = 'Cerrar suave sin insistir';
-} else if (decision.should_escalate || decision.handoff_ready || currentStage === 'ready_for_handoff') {
+} else if (requestedHandoff && routeComplete && !objectiveAlreadyHandoff) {
   currentStage = 'ready_for_handoff';
   commercialStatus = 'prospecto_caliente';
   awaitingField = 'none';
   nextStep = 'Notificar vendedor con resumen';
+} else if (requestedHandoff && objectiveAlreadyHandoff) {
+  currentStage = 'post_handoff_followup';
+  commercialStatus = 'seguimiento_humano';
+  awaitingField = 'none';
+  nextStep = 'Responder y sumar contexto; no duplicar handoff del mismo objetivo';
+} else if (requestedHandoff && !routeComplete) {
+  currentStage = input.derivedStage?.currentStage || 'new_reply';
+  commercialStatus = input.derivedStage?.status || 'perfil_incompleto';
+  awaitingField = input.derivedStage?.awaitingField || awaitingField || 'none';
+  nextStep = input.derivedStage?.nextStep || 'Completar perfil antes de avisar al vendedor';
 }
 
 const defaultHandoffReply = profile.interestType === 'sell'
@@ -646,7 +754,7 @@ const defaultHandoffReply = profile.interestType === 'sell'
     ? 'Perfecto, con eso ya puedo ubicar mejor opciones. Te conecto con un compañero especialista para que te comparta propiedades que encajen contigo.'
     : 'Perfecto, ya tengo lo importante. Te conecto con un compañero especialista para que te comparta el siguiente paso.';
 const replyText = String(decision.reply_text || '').trim() || (currentStage === 'ready_for_handoff' ? defaultHandoffReply : '');
-const canReplyWithoutHandoff = Boolean(replyText && !alreadyHandoff && !doNotContact);
+const canReplyWithoutHandoff = Boolean(replyText && !doNotContact);
 const budget = profile.interestType === 'rent' ? profile.rentBudget : (profile.budgetMax || profile.sellerAskingPrice);
 const profileSummary = profile.summary || [
   'Interés: ' + missing(profile.interestType),
@@ -659,7 +767,18 @@ const profileSummary = profile.summary || [
 const suggestedNext = profile.nextBestAction || (profile.interestType === 'sell'
   ? 'Llamar para validar datos de la propiedad y agendar valuación.'
   : 'Mandarle 2-3 opciones que encajen y proponer llamada/visita.');
-const conversationKey = 'envios:' + String(envio.id || '');
+const handoffProfile = { ...profile };
+if (currentStage === 'ready_for_handoff') {
+  handoffProfile.objectiveHandoffs = {
+    ...(profile.objectiveHandoffs || {}),
+    [objectiveKey]: {
+      status: 'pending',
+      at: new Date().toISOString(),
+      summary: profileSummary,
+    },
+  };
+}
+const conversationKey = 'envios:' + String(envio.id || '') + ':' + objectiveKey;
 const lastInboundMessage = String(inbound.mensaje || '').trim();
 const sellerMessage = [
   'Nuevo prospecto inmobiliario',
@@ -694,7 +813,7 @@ return {
     envioId: envio.id,
     phone: profile.phone || inbound.telefono || envio.telefono_digits,
     phoneNumberId: inbound.phone_number_id || '',
-    profile,
+    profile: handoffProfile,
     profileSummary,
     currentStage,
     commercialStatus,
@@ -702,7 +821,7 @@ return {
     nextStep,
     reply_text: replyText,
     shouldSendReply: Boolean(canReplyWithoutHandoff && (decision.should_send_reply !== false || currentStage !== 'ready_for_handoff')),
-    shouldNotifySeller: Boolean((decision.should_escalate || decision.handoff_ready || currentStage === 'ready_for_handoff') && !doNotContact && !alreadyHandoff),
+    shouldNotifySeller: Boolean(currentStage === 'ready_for_handoff' && !doNotContact && !objectiveAlreadyHandoff),
     noEnviar: doNotContact,
     sellerHandoffPayload: {
       envioId: envio.id,
@@ -711,9 +830,10 @@ return {
       sellerPhone: profile.assignedSellerPhone || '+5213316994400',
       sellerPhones: $env.SELLER_NOTIFY_PHONES || profile.assignedSellerPhone || '+5213316994400',
       summary: sellerMessage,
-      handoffPayload: { profile, qualification: { level: profile.qualificationLevel, score: profile.qualificationScore, reasons: profile.qualificationReasons }, nextBestAction: suggestedNext, source_message_id: inbound.message_id || '' }
+      handoffPayload: { profile: handoffProfile, qualification: { level: profile.qualificationLevel, score: profile.qualificationScore, reasons: profile.qualificationReasons }, nextBestAction: suggestedNext, source_message_id: inbound.message_id || '', objectiveKey }
     },
-    technicalStatus: [input.agentDecisionStatus, currentStage, input.sellerHandoffStatus ? 'handoff_exists' : 'handoff_new'].filter(Boolean).join(';')
+    objectiveKey,
+    technicalStatus: [input.agentDecisionStatus, currentStage, objectiveAlreadyHandoff ? 'objective_handoff_exists' : 'objective_handoff_new'].filter(Boolean).join(';')
   }
 };`;
 

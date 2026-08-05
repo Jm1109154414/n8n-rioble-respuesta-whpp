@@ -1,8 +1,8 @@
 # Flujo De Respuestas WhatsApp Sofía
 
-Objetivo: después de que el workflow outbound manda el primer mensaje de reactivación, el workflow de respuestas debe continuar la conversación con quien conteste hasta dejarlo en uno de estos cierres:
+Objetivo: después de que el workflow outbound manda el primer mensaje de reactivación, el workflow de respuestas debe continuar la conversación con quien conteste hasta dejarlo en uno de estos estados operativos:
 
-- `handoff_sent`: lead listo y avisado al vendedor/dueño.
+- `handoff_sent`: un objetivo concreto ya fue avisado al vendedor.
 - `not_interested`: no interesado; se cierra suave y se pregunta si tiene propiedad para vender.
 - `do_not_contact`: pidió no recibir mensajes; se marca no contactar y no se insiste.
 - `nurture`: interés ambiguo o exploratorio; queda guardado sin presión.
@@ -55,8 +55,9 @@ Notas:
 
 - Si no hay handoff, `Should Notify Seller?` salta directo a `Should Send Reply?`.
 - Si hay handoff, primero se notifica internamente y luego Sofía responde al lead confirmando el siguiente paso.
-- `seller_handoffs.conversation_key` evita notificar dos veces al vendedor por el mismo lead.
-- Si ya existe `handoff_sent`, el flujo no recalifica ni vuelve a contestar como Sofía.
+- `seller_handoffs.conversation_key` evita notificar dos veces al vendedor por el mismo objetivo del lead.
+- Si ya existe handoff para el mismo objetivo, Sofía puede seguir contestando breve y guardar contexto, pero no duplica notificación.
+- Si el lead cambia de intención u objetivo, por ejemplo de invertir a vender, Sofía vuelve a perfilar esa nueva ruta y puede generar otro handoff distinto.
 
 ## Endpoint De Decisión
 
@@ -90,11 +91,11 @@ Para el MVP, el endpoint puede responder en formato plano compatible con n8n o e
 
 `ready_for_handoff`:
 
-El lead ya trae datos suficientes o pidió avanzar con opciones, visita, llamada, valuación o especialista.
+El lead ya trae datos suficientes de la ruta actual. Pedir opciones, visita, llamada o valuación por sí solo no basta si faltan datos clave.
 
 `handoff_sent`:
 
-Ya se notificó al vendedor/dueño. A partir de aquí Sofía no vuelve a perfilar.
+Ya se notificó al vendedor por un objetivo específico. A partir de aquí Sofía no repite ese handoff, pero puede seguir contestando y abrir otra ruta si el lead trae una necesidad distinta.
 
 `not_interested`:
 
@@ -117,6 +118,39 @@ Luego abre la ruta correcta:
 - Compra/inversión/renta: preguntar qué tipo de propiedad busca.
 - Venta: preguntar qué propiedad quiere vender o en qué zona está.
 - Después: zona en Jalisco y presupuesto/precio según aplique.
+
+## Requisitos Antes De Handoff
+
+Compra:
+
+- Tipo de propiedad.
+- Zona.
+- Presupuesto aproximado.
+- Forma de pago: crédito, contado o mixto.
+- Plazo.
+- Si es casa/departamento: recámaras.
+
+Venta:
+
+- Tipo de propiedad.
+- Zona o ubicación.
+- Precio esperado o necesidad de valuación.
+- Plazo de venta.
+- Si es casa/departamento: recámaras, baños y estacionamiento.
+- Si es terreno, bodega, local u oficina: metros de terreno/construcción o tamaño aproximado.
+
+Renta:
+
+- Tipo de propiedad.
+- Zona.
+- Presupuesto mensual.
+- Fecha/plazo para moverse.
+
+Inversión:
+
+- Presupuesto.
+- Plazo.
+- Preferencia mínima: zona, tipo de propiedad u objetivo de inversión.
 
 ## SQL Necesario
 
