@@ -343,7 +343,7 @@ for (const [label, regex] of [
 }
 
 const zones = [];
-for (const zone of ['Zapopan', 'Guadalajara', 'Providencia', 'Andares', 'Puerta de Hierro', 'Chapalita', 'Tlaquepaque', 'Tonalá', 'Tlajomulco', 'Puerto Vallarta', 'Jalisco', 'Casa Fuerte']) {
+for (const zone of ['Zapopan', 'Guadalajara', 'Providencia', 'Andares', 'Puerta de Hierro', 'Zona Real', 'Chapalita', 'Tlaquepaque', 'Tonalá', 'Tlajomulco', 'Puerto Vallarta', 'Jalisco', 'Casa Fuerte']) {
   if (new RegExp(zone, 'i').test(historyText)) zones.push(zone);
 }
 
