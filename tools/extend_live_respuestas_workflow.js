@@ -728,9 +728,11 @@ function missing(value) {
 
 const qualification = decision.qualification || input.qualification || { level: 'nurture', score: 0, reasons: [] };
 const existingRoutes = baseProfile.routes && typeof baseProfile.routes === 'object' ? baseProfile.routes : {};
-const activeIntentCandidate = firstNonEmpty(collected.interestType, baseProfile.currentIntent, baseProfile.activeRoute, baseProfile.interestType, 'unknown');
-const previousIntent = firstNonEmpty(baseProfile.currentIntent, baseProfile.activeRoute, baseProfile.interestType, 'unknown');
-const explicitIntentChange = Boolean(collected.interestType && previousIntent !== 'unknown' && collected.interestType !== previousIntent);
+const deterministicIntent = firstNonEmpty(baseProfile.currentIntent, baseProfile.activeRoute, baseProfile.interestType, 'unknown');
+const agentIntent = firstNonEmpty(collected.interestType, 'unknown');
+const activeIntentCandidate = deterministicIntent !== 'unknown' ? deterministicIntent : agentIntent;
+const previousIntent = deterministicIntent;
+const explicitIntentChange = Boolean(agentIntent !== 'unknown' && previousIntent !== 'unknown' && agentIntent !== previousIntent && activeIntentCandidate === agentIntent);
 const routeState = activeIntentCandidate && activeIntentCandidate !== 'unknown' && existingRoutes[activeIntentCandidate] && typeof existingRoutes[activeIntentCandidate] === 'object'
   ? existingRoutes[activeIntentCandidate]
   : {};
@@ -754,13 +756,13 @@ const profile = {
   bedrooms: firstNonEmpty(collected.bedrooms, routeState.bedrooms, inheritedProfile.bedrooms),
   bathrooms: firstNonEmpty(collected.bathrooms, routeState.bathrooms, inheritedProfile.bathrooms),
   parkingSpaces: firstNonEmpty(collected.parkingSpaces, routeState.parkingSpaces, inheritedProfile.parkingSpaces),
-  sellerPropertyAddress: firstNonEmpty(collected.sellerPropertyAddress, routeState.sellerPropertyAddress, inheritedProfile.sellerPropertyAddress),
-  sellerAskingPrice: firstNonEmpty(collected.sellerAskingPrice, routeState.sellerAskingPrice, inheritedProfile.sellerAskingPrice),
-  sellerPropertyCondition: firstNonEmpty(collected.sellerPropertyCondition, routeState.sellerPropertyCondition, inheritedProfile.sellerPropertyCondition),
-  sellerPropertySize: firstNonEmpty(collected.sellerPropertySize, routeState.sellerPropertySize, inheritedProfile.sellerPropertySize),
+  sellerPropertyAddress: activeIntentCandidate === 'sell' ? firstNonEmpty(collected.sellerPropertyAddress, routeState.sellerPropertyAddress, inheritedProfile.sellerPropertyAddress) : '',
+  sellerAskingPrice: activeIntentCandidate === 'sell' ? firstNonEmpty(collected.sellerAskingPrice, routeState.sellerAskingPrice, inheritedProfile.sellerAskingPrice) : '',
+  sellerPropertyCondition: activeIntentCandidate === 'sell' ? firstNonEmpty(collected.sellerPropertyCondition, routeState.sellerPropertyCondition, inheritedProfile.sellerPropertyCondition) : '',
+  sellerPropertySize: activeIntentCandidate === 'sell' ? firstNonEmpty(collected.sellerPropertySize, routeState.sellerPropertySize, inheritedProfile.sellerPropertySize) : '',
   landSize: firstNonEmpty(collected.landSize, routeState.landSize, inheritedProfile.landSize),
   constructionSize: firstNonEmpty(collected.constructionSize, routeState.constructionSize, inheritedProfile.constructionSize),
-  sellerOwnership: firstNonEmpty(collected.sellerOwnership, routeState.sellerOwnership, inheritedProfile.sellerOwnership),
+  sellerOwnership: activeIntentCandidate === 'sell' ? firstNonEmpty(collected.sellerOwnership, routeState.sellerOwnership, inheritedProfile.sellerOwnership) : '',
   investmentObjective: firstNonEmpty(collected.investmentObjective, routeState.investmentObjective, inheritedProfile.investmentObjective),
   riskProfile: firstNonEmpty(collected.riskProfile, routeState.riskProfile, inheritedProfile.riskProfile),
   objectiveHandoffs: baseProfile.objectiveHandoffs && typeof baseProfile.objectiveHandoffs === 'object' ? baseProfile.objectiveHandoffs : {},
@@ -788,13 +790,13 @@ if (profile.interestType && profile.interestType !== 'unknown') {
       bedrooms: profile.bedrooms,
       bathrooms: profile.bathrooms,
       parkingSpaces: profile.parkingSpaces,
-      sellerPropertyAddress: profile.sellerPropertyAddress,
-      sellerAskingPrice: profile.sellerAskingPrice,
-      sellerPropertyCondition: profile.sellerPropertyCondition,
-      sellerPropertySize: profile.sellerPropertySize,
+      sellerPropertyAddress: profile.interestType === 'sell' ? profile.sellerPropertyAddress : '',
+      sellerAskingPrice: profile.interestType === 'sell' ? profile.sellerAskingPrice : '',
+      sellerPropertyCondition: profile.interestType === 'sell' ? profile.sellerPropertyCondition : '',
+      sellerPropertySize: profile.interestType === 'sell' ? profile.sellerPropertySize : '',
       landSize: profile.landSize,
       constructionSize: profile.constructionSize,
-      sellerOwnership: profile.sellerOwnership,
+      sellerOwnership: profile.interestType === 'sell' ? profile.sellerOwnership : '',
       investmentObjective: profile.investmentObjective,
       riskProfile: profile.riskProfile,
       updatedAt: new Date().toISOString(),
