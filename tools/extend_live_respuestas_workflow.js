@@ -139,7 +139,7 @@ variants AS (
  SELECT '521' || substring(phone_digits from 3) FROM incoming WHERE phone_digits LIKE '52%' AND length(phone_digits) = 12
 ),
 matched AS (
- SELECT e.id, e.nombre
+ SELECT e.id, e.nombre, e.ultimo_envio
  FROM envios e
  JOIN variants v ON e.telefono_digits = v.phone_digits
  ORDER BY e.ultimo_envio DESC NULLS LAST, e.id DESC
@@ -185,7 +185,11 @@ RETURNING
  nombre_perfil,
  mensaje,
  tipo,
- message_id;`;
+ message_id,
+ (SELECT ultimo_envio FROM matched) AS lead_ultimo_envio,
+ (
+   timestamp < COALESCE((SELECT ultimo_envio FROM matched), 'epoch'::timestamptz) - interval '2 minutes'
+ ) AS stale_before_latest_outbound;`;
 
 nodeByName('Insertar conversacion').parameters = {
   operation: 'executeQuery',
@@ -1036,7 +1040,7 @@ return {
     nextStep,
     reply_text: replyText,
     shouldSendReply: Boolean(canReplyWithoutHandoff && (decision.should_send_reply !== false || currentStage !== 'ready_for_handoff')),
-    shouldNotifySeller: Boolean(currentStage === 'ready_for_handoff' && !doNotContact && !objectiveAlreadyHandoff),
+    shouldNotifySeller: Boolean(String($env.SELLER_NOTIFY_ENABLED || 'true').toLowerCase() !== 'false' && currentStage === 'ready_for_handoff' && !doNotContact && !objectiveAlreadyHandoff),
     noEnviar: doNotContact,
     sellerHandoffPayload: {
       envioId: envio.id,
@@ -1292,7 +1296,7 @@ from inserted;`;
 
 const newNodes = [
   postgresNode('Leer contexto inmobiliario', 'leer_contexto_inmobiliario', [1780, 180], readContextQuery, "={{ [ $json.id || '', $('Normalizar mensajes').first().json.telefono || '', $('Normalizar mensajes').first().json.message_id || '' ] }}"),
-  ifNode('New Inbound Message?', 'new_inbound_message_inmobiliario', [1560, 208], '={{Boolean($json.conversation_pk && $json.id)}}'),
+  ifNode('New Inbound Message?', 'new_inbound_message_inmobiliario', [1560, 208], '={{Boolean($json.conversation_pk && $json.id && !$json.stale_before_latest_outbound)}}'),
   allowlistIfNode('Only Test Phone?', 'only_test_phone_inmobiliario', [2000, 180]),
   codeNode('Build Conversation Context', 'build_conversation_context_inmobiliario', [2220, 180], buildContextCode),
   httpNode('Call Agent Decision', 'call_agent_decision_inmobiliario', [2440, 180], {
